@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>ML-02 Drift Anomaly</name>
+  <id>ml-02-drift-anomaly</id>
+  <severity>high</severity>
+  <type>correlation</type>
+  <description>Аномальное отклонение метрик модели или распределения предсказаний более 3σ от baseline. Потенциальный признак data poisoning или деградации.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="drift_metric">
+      <filter>
+        <and>
+          <eq field="DeviceVendor" value="MLOps"/>
+          <eq field="DeviceProduct" value="DriftDetector"/>
+          <regex field="DeviceEventClassID" pattern="\.(accuracy|f1|auc|psi|ks_statistic)$"/>
+          <gte field="DeviceCustomNumber1" value="3"/>
+          <in field="DeviceCustomString1" values="1,2"/>
+        </and>
+      </filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition><selector>drift_metric</selector></condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>high</severity>
+      <category>ML-POISONING</category>
+      <playbook>IR-01</playbook>
+    </action>
+  </actions>
+</rule>

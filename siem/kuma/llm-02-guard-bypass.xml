@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>LLM-02 Guardrails Bypass</name>
+  <id>llm-02-guard-bypass</id>
+  <severity>high</severity>
+  <type>correlation</type>
+  <description>Guardrails разрешили запрос, но post-call DLP обнаружил утечку. Сильный индикатор успешного обхода защит.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="bypass">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <eq field="DeviceEventCategory" value="llm-response"/>
+        <eq field="DeviceCustomString1" value="allow"/>
+        <in field="DeviceCustomString2" values="block,leak-detected"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition><selector>bypass</selector></condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>high</severity>
+      <category>ML-INJECTION</category>
+      <playbook>IR-03</playbook>
+    </action>
+  </actions>
+</rule>

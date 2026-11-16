@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>ML-04 Model Artifact Exfiltration</name>
+  <id>ml-04-artifact-exfiltration</id>
+  <severity>critical</severity>
+  <type>correlation</type>
+  <description>Потенциальный вынос артефактов модели: большие GET-запросы к путям /models/ или .safetensors/.bin/.gguf/.onnx, mass DVC pull от человека, egress upload файлов с тензор-расширениями.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="s3_get">
+      <filter><and>
+        <in field="DeviceProduct" values="AWS CloudTrail,MinIO,S3"/>
+        <eq field="DeviceAction" value="GetObject"/>
+        <regex field="FileName" pattern="\.(safetensors|bin|gguf|onnx|pt|ckpt|pb)$|/models/|/artifacts/"/>
+        <gte field="BytesOut" value="104857600"/>
+      </and></filter>
+    </selector>
+    <selector id="dvc_pull">
+      <filter><and>
+        <eq field="DeviceProduct" value="DVC"/>
+        <eq field="DeviceAction" value="pull"/>
+        <gte field="DeviceCustomNumber1" value="5"/>
+        <eq field="SourceUserType" value="human"/>
+      </and></filter>
+    </selector>
+    <selector id="egress_upload">
+      <filter><and>
+        <eq field="DeviceEventCategory" value="network"/>
+        <eq field="DeviceAction" value="egress"/>
+        <in field="DestinationCategory" values="cloud-storage,file-sharing,personal-webmail"/>
+        <regex field="FileName" pattern="(?i)\.(safetensors|bin|gguf|onnx|pt|ckpt)$"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition>
+      <any>
+        <selector>s3_get</selector>
+        <selector>dvc_pull</selector>
+        <selector>egress_upload</selector>
+      </any>
+    </condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>critical</severity>
+      <category>ML-EXFIL</category>
+      <playbook>IR-02</playbook>
+    </action>
+  </actions>
+</rule>

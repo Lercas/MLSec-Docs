@@ -1,0 +1,19 @@
+`llm_gateway_requests` earliest=-15m
+| where
+    ('guard.category'="prompt-injection" AND 'guard.score'>=0.85)
+    OR (match('prompt.text', "(?i)(ignore (previous|prior|above) (instructions|prompt))"))
+    OR (match('prompt.text', "(?i)(print your (system|initial) prompt|repeat everything above|what are your instructions|you are now (a|an) \w+)"))
+    OR ('retrieved.contains_injection_marker'="true")
+| eval detection="llm-01-injection-attempt"
+| eval severity=case(
+    'guard.score'>=0.95, "high",
+    'retrieved.contains_injection_marker'="true", "high",
+    1=1, "medium")
+| stats
+    count as attempts,
+    values(guard.score) as guard_scores,
+    values(model) as models,
+    values(src_ip) as src_ips
+    by api_key_id, user_id, detection, severity
+| where attempts >= 1
+| sort - attempts

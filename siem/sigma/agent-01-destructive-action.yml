@@ -1,0 +1,36 @@
+title: Agent Destructive Action Without HITL
+id: f6c2a2dc-1bc2-5c32-b356-79eb7028e3bb
+name: agent-01-destructive-action
+status: experimental
+description: |
+  ИИ-агент инициировал destructive операцию (delete, drop, truncate, send email,
+  financial transfer, git push в защищённую ветку) без соответствующего HITL
+  подтверждения, связанного с действием. approval.validation вычисляет broker.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-04-agentic-breach.md
+tags:
+  - atlas.tactic.ta0009
+  - owasp.agentic.asi06
+  - owasp.agentic.asi04
+logsource:
+  product: agent-broker
+detection:
+  selection:
+    event.category: 'agent-tool-call'
+    tool.risk_class:
+      - 'destructive'
+      - 'external-side-effect'
+      - 'financial'
+    hitl.required: true
+    approval.validation:
+      - invalid
+      - missing
+      - expired
+      - replayed
+      - unknown
+  condition: selection
+falsepositives:
+  - Ошибка в конфигурации tool risk classification (калибровать)
+level: critical

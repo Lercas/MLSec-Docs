@@ -1,0 +1,26 @@
+# Copy to .github/workflows after selecting immutable action revisions.
+# No model/provider/production credentials, no live tool calls.
+name: MLSec policy smoke
+on:
+  pull_request:
+    paths: ["opa/**", "ci/scripts/**", ".github/workflows/policy-smoke.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  policy-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      OPA_SHA256: ${{ vars.OPA_LINUX_AMD64_SHA256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify pinned OPA and synthetic policy cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ci/scripts/install-opa.sh "$RUNNER_TEMP/mlsec-opa"
+          "$RUNNER_TEMP/mlsec-opa" check --strict opa/
+          "$RUNNER_TEMP/mlsec-opa" test opa/ --verbose

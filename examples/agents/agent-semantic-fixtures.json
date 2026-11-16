@@ -1,0 +1,500 @@
+{
+  "fixture_version": "1.0",
+  "description": "Synthetic historical fixtures; base approval is first JSON example in agent-approval-record-examples.md. No live authority.",
+  "base": {
+    "action": {
+      "operation_id": "operation-synthetic-001",
+      "tenant_id": "tenant-synthetic",
+      "workflow_instance_id": "run-synthetic-001",
+      "agent_id": "agent-ticket-triage",
+      "action_id": "action-execute-ticket-update",
+      "action_name": "execute_ticket_update",
+      "workflow_id": "wf-ticket-update-20260518-001",
+      "tool_name": "ticket_writer",
+      "tool_revision": "synthetic-v1",
+      "connector_id": "ticketing-write-placeholder",
+      "requested_by": {
+        "actor_type": "service_account",
+        "actor_id": "svc-agent-ticket-triage",
+        "role": "agent_runtime"
+      },
+      "records": 1,
+      "data_classification": "internal",
+      "external_side_effect": false,
+      "arguments": {
+        "ticket_id": "ticket-synthetic-001",
+        "comment": "Synthetic text"
+      },
+      "preconditions": {
+        "object_revision": "synthetic-rev-1"
+      },
+      "idempotency_ref": "synthetic-idempotency-001"
+    },
+    "binding": {
+      "version": "1.0",
+      "approval_id": "approval-single-20260518-001",
+      "tenant_id": "tenant-synthetic",
+      "workflow_instance_id": "run-synthetic-001",
+      "delegation_revision": "delegation-synthetic-v1"
+    },
+    "current": {
+      "now": "2026-05-18T14:08:00Z",
+      "tenant_id": "tenant-synthetic",
+      "workflow_instance_id": "run-synthetic-001",
+      "approval_revoked": false,
+      "approval_consumed": false,
+      "agent_active": true,
+      "object_acl_allowed": true,
+      "external_effects_allowed": false,
+      "budget_available": true,
+      "policy_reference": {
+        "policy_id": "agent-action-policy-example",
+        "policy_version": "1.0.0",
+        "rule_id": "approval-required-action"
+      },
+      "delegation": {
+        "revision": "delegation-synthetic-v1",
+        "granted_at": "2026-05-18T13:00:00Z",
+        "expires_at": "2026-05-18T20:00:00Z",
+        "revoked": false,
+        "tenant_id": "tenant-synthetic",
+        "agent_id": "agent-ticket-triage",
+        "action_ids": [
+          "action-execute-ticket-update"
+        ],
+        "max_records": 1
+      },
+      "identity_directory": {
+        "agent-owner-42": {
+          "person_ref": "person-synthetic-1",
+          "active": true,
+          "roles": [
+            "agent_owner"
+          ]
+        },
+        "owner-alias-42": {
+          "person_ref": "person-synthetic-1",
+          "active": true,
+          "roles": [
+            "agent_owner"
+          ]
+        },
+        "security-reviewer-07": {
+          "person_ref": "person-synthetic-2",
+          "active": true,
+          "roles": [
+            "security_reviewer"
+          ]
+        }
+      },
+      "allowed_approver_roles": [
+        "agent_owner",
+        "security_reviewer"
+      ],
+      "required_approver_roles": [
+        "agent_owner"
+      ],
+      "condition_results": {},
+      "related_event_ids": [
+        "event-approval-required-001",
+        "event-human-approval-recorded-001"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "historical-positive",
+      "expected": "consistent_synthetic_example"
+    },
+    {
+      "id": "expired-today",
+      "changes": [
+        {
+          "path": "current.now",
+          "value": "2026-11-13T12:00:00Z"
+        }
+      ],
+      "expected": "approval_time_invalid"
+    },
+    {
+      "id": "exact-expiry",
+      "changes": [
+        {
+          "path": "current.now",
+          "value": "2026-05-18T18:07:00Z"
+        }
+      ],
+      "expected": "approval_time_invalid"
+    },
+    {
+      "id": "before-approval",
+      "changes": [
+        {
+          "path": "current.now",
+          "value": "2026-05-18T14:06:59Z"
+        }
+      ],
+      "expected": "approval_time_invalid"
+    },
+    {
+      "id": "inverted-request-time",
+      "changes": [
+        {
+          "path": "record.requested_at",
+          "value": "2026-05-18T14:09:00Z"
+        }
+      ],
+      "expected": "approval_time_invalid"
+    },
+    {
+      "id": "revoked-approval-after-queue",
+      "changes": [
+        {
+          "path": "current.approval_revoked",
+          "value": true
+        }
+      ],
+      "expected": "approval_revoked"
+    },
+    {
+      "id": "consumed-approval",
+      "changes": [
+        {
+          "path": "current.approval_consumed",
+          "value": true
+        }
+      ],
+      "expected": "approval_consumed"
+    },
+    {
+      "id": "policy-revision-drift",
+      "changes": [
+        {
+          "path": "current.policy_reference.policy_version",
+          "value": "1.0.1"
+        }
+      ],
+      "expected": "stale_policy"
+    },
+    {
+      "id": "object-acl-revoked",
+      "changes": [
+        {
+          "path": "current.object_acl_allowed",
+          "value": false
+        }
+      ],
+      "expected": "current_access_denied"
+    },
+    {
+      "id": "retired-agent",
+      "changes": [
+        {
+          "path": "current.agent_active",
+          "value": false
+        }
+      ],
+      "expected": "current_access_denied"
+    },
+    {
+      "id": "delegation-revoked-after-queue",
+      "changes": [
+        {
+          "path": "current.delegation.revoked",
+          "value": true
+        }
+      ],
+      "expected": "delegation_inactive"
+    },
+    {
+      "id": "delegation-expired-at-resume",
+      "changes": [
+        {
+          "path": "current.delegation.expires_at",
+          "value": "2026-05-18T14:08:00Z"
+        }
+      ],
+      "expected": "delegation_inactive"
+    },
+    {
+      "id": "approval-outlives-delegation",
+      "changes": [
+        {
+          "path": "current.delegation.expires_at",
+          "value": "2026-05-18T17:00:00Z"
+        }
+      ],
+      "expected": "approval_outlives_grant"
+    },
+    {
+      "id": "grant-scope-reduced",
+      "changes": [
+        {
+          "path": "current.delegation.action_ids",
+          "value": []
+        }
+      ],
+      "expected": "delegation_scope_mismatch"
+    },
+    {
+      "id": "parent-budget-reserved",
+      "changes": [
+        {
+          "path": "current.budget_available",
+          "value": false
+        }
+      ],
+      "expected": "budget_unavailable"
+    },
+    {
+      "id": "record-scope-agent-substitution",
+      "changes": [
+        {
+          "path": "record.approval_scope.agent_id",
+          "value": "agent-other"
+        }
+      ],
+      "expected": "agent_mismatch"
+    },
+    {
+      "id": "tool-substitution",
+      "changes": [
+        {
+          "path": "action.tool_name",
+          "value": "ticket_reader"
+        }
+      ],
+      "expected": "scope_mismatch:tool_name"
+    },
+    {
+      "id": "too-many-records",
+      "changes": [
+        {
+          "path": "action.records",
+          "value": 2
+        }
+      ],
+      "expected": "record_limit"
+    },
+    {
+      "id": "data-classification-drift",
+      "changes": [
+        {
+          "path": "action.data_classification",
+          "value": "restricted"
+        }
+      ],
+      "expected": "data_scope"
+    },
+    {
+      "id": "external-effect-disabled",
+      "changes": [
+        {
+          "path": "action.external_side_effect",
+          "value": true
+        }
+      ],
+      "expected": "external_denied"
+    },
+    {
+      "id": "approver-id-disagrees",
+      "changes": [
+        {
+          "path": "record.approver_ids",
+          "value": [
+            "security-reviewer-07"
+          ]
+        }
+      ],
+      "expected": "approver_links"
+    },
+    {
+      "id": "approver-role-removed",
+      "changes": [
+        {
+          "path": "current.identity_directory.agent-owner-42.roles",
+          "value": []
+        }
+      ],
+      "expected": "approver_not_authorized"
+    },
+    {
+      "id": "condition-only-text",
+      "changes": [
+        {
+          "path": "record.conditions",
+          "value": [
+            {
+              "condition_id": "object-review",
+              "description": "Synthetic review",
+              "must_be_satisfied_before_execution": true
+            }
+          ]
+        }
+      ],
+      "expected": "condition_not_satisfied"
+    },
+    {
+      "id": "argument-swap-after-preview",
+      "changes": [
+        {
+          "path": "action.arguments.ticket_id",
+          "value": "ticket-synthetic-002"
+        }
+      ],
+      "expected": "action_binding_mismatch"
+    },
+    {
+      "id": "object-revision-changed",
+      "changes": [
+        {
+          "path": "action.preconditions.object_revision",
+          "value": "synthetic-rev-2"
+        }
+      ],
+      "expected": "action_binding_mismatch"
+    },
+    {
+      "id": "tool-contract-changed",
+      "changes": [
+        {
+          "path": "action.tool_revision",
+          "value": "synthetic-v2"
+        }
+      ],
+      "expected": "action_binding_mismatch"
+    },
+    {
+      "id": "approval-record-modified",
+      "changes": [
+        {
+          "path": "record.action_summary",
+          "value": "Changed after approval"
+        }
+      ],
+      "expected": "approval_binding_mismatch"
+    },
+    {
+      "id": "delegation-revision-changed",
+      "changes": [
+        {
+          "path": "current.delegation.revision",
+          "value": "delegation-synthetic-v2"
+        }
+      ],
+      "expected": "delegation_revision_mismatch"
+    },
+    {
+      "id": "tenant-mismatch",
+      "changes": [
+        {
+          "path": "current.tenant_id",
+          "value": "tenant-other"
+        }
+      ],
+      "expected": "tenant_mismatch"
+    },
+    {
+      "id": "run-mismatch",
+      "changes": [
+        {
+          "path": "current.workflow_instance_id",
+          "value": "run-other"
+        }
+      ],
+      "expected": "run_mismatch"
+    },
+    {
+      "id": "missing-evidence-event",
+      "changes": [
+        {
+          "path": "current.related_event_ids",
+          "value": []
+        }
+      ],
+      "expected": "event_links"
+    },
+    {
+      "id": "unversioned-binding",
+      "changes": [
+        {
+          "path": "binding.version",
+          "value": "2.0"
+        }
+      ],
+      "expected": "binding_version"
+    },
+    {
+      "id": "two-distinct-current-people",
+      "changes": [
+        {
+          "path": "record.approval_type",
+          "value": "two_person"
+        },
+        {
+          "path": "record.approved_by",
+          "value": [
+            {
+              "actor_type": "human_user",
+              "actor_id": "agent-owner-42",
+              "role": "agent_owner"
+            },
+            {
+              "actor_type": "human_user",
+              "actor_id": "security-reviewer-07",
+              "role": "security_reviewer"
+            }
+          ]
+        },
+        {
+          "path": "record.approver_ids",
+          "value": [
+            "agent-owner-42",
+            "security-reviewer-07"
+          ]
+        },
+        {
+          "path": "current.required_approver_roles",
+          "value": [
+            "agent_owner",
+            "security_reviewer"
+          ]
+        }
+      ],
+      "synthetic_reattest": true,
+      "expected": "consistent_synthetic_example"
+    },
+    {
+      "id": "two-ids-one-human",
+      "changes": [
+        {
+          "path": "record.approval_type",
+          "value": "two_person"
+        },
+        {
+          "path": "record.approved_by",
+          "value": [
+            {
+              "actor_type": "human_user",
+              "actor_id": "agent-owner-42",
+              "role": "agent_owner"
+            },
+            {
+              "actor_type": "human_user",
+              "actor_id": "owner-alias-42",
+              "role": "agent_owner"
+            }
+          ]
+        },
+        {
+          "path": "record.approver_ids",
+          "value": [
+            "agent-owner-42",
+            "owner-alias-42"
+          ]
+        }
+      ],
+      "expected": "same_person_alias"
+    }
+  ]
+}

@@ -1,0 +1,795 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/agents/examples/agent-runtime-events.schema.json",
+  "title": "Agent Runtime Event",
+  "description": "Проектный пример формы runtime audit events (milksec-agent-examples/1.0), JSON Schema Draft 2020-12. Задаёт event_type и обязательные поля; не доказывает полноту журнала, права, подлинность хэшей или внешний результат. Ссылки и хэши также требуют контроля доступа. Semantic validation и evidence sidecars описаны в README.md.",
+  "$comment": "Исправление аннотаций сохраняет прежнюю форму. Новые event_type/status/поля требуют явной версии и миграции, а не молчаливого расширения этой схемы.",
+  "type": "object",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "$ref": "#/$defs/state_transition_event_type"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/state_transition_required"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "connector_quarantined"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "connector_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "approval_revoked"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "approval_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "$ref": "#/$defs/handoff_event_type"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/handoff_required"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "$ref": "#/$defs/tool_call_event_type"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/tool_call_required"
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {
+            "properties": {
+              "parent_agent_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "parent_agent_id"
+            ]
+          },
+          {
+            "properties": {
+              "child_agent_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "child_agent_id"
+            ]
+          },
+          {
+            "properties": {
+              "handoff_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "handoff_id"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/handoff_required"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "$ref": "#/$defs/tool_related_event_type"
+          },
+          "tool_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "event_type",
+          "tool_id"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/tool_call_required"
+      }
+    }
+  ],
+  "required": [
+    "event_id",
+    "event_type",
+    "timestamp",
+    "agent_id",
+    "agent_version",
+    "session_id",
+    "workflow_id",
+    "workflow_instance_id",
+    "parent_agent_id",
+    "child_agent_id",
+    "handoff_id",
+    "delegation_scope",
+    "delegation_scope_hash",
+    "tool_call_chain_id",
+    "initiated_by",
+    "executed_by",
+    "actor_type",
+    "actor_id",
+    "action_type",
+    "tool_id",
+    "tool_name",
+    "connector_id",
+    "action_name",
+    "action_risk_level",
+    "policy_decision",
+    "approval_id",
+    "input_reference",
+    "output_reference",
+    "data_classification",
+    "memory_operation",
+    "external_side_effect",
+    "status",
+    "error_code",
+    "correlation_id",
+    "evidence_uri"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Уникальный идентификатор runtime event."
+    },
+    "event_type": {
+      "type": "string",
+      "description": "Тип события runtime audit trail.",
+      "enum": [
+        "agent_started",
+        "plan_created",
+        "tool_call_requested",
+        "tool_call_approved",
+        "tool_call_denied",
+        "tool_call_executed",
+        "agent_handoff_requested",
+        "agent_handoff_completed",
+        "memory_read",
+        "memory_write",
+        "policy_denied",
+        "approval_required",
+        "human_approval_recorded",
+        "connector_error",
+        "anomaly_detected",
+        "rate_limit_triggered",
+        "kill_switch_triggered",
+        "agent_paused",
+        "agent_resumed",
+        "agent_quarantined",
+        "agent_disabled",
+        "agent_retired",
+        "agent_reenabled",
+        "connector_quarantined",
+        "approval_revoked",
+        "rollback_started",
+        "rollback_completed",
+        "agent_stopped"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Время события в UTC."
+    },
+    "agent_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Идентификатор агента из registry или runtime binding."
+    },
+    "agent_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Версия агента или runtime configuration."
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Идентификатор пользовательской или системной сессии. Не должен содержать raw sensitive content."
+    },
+    "workflow_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Идентификатор workflow, связывающий события одного запуска."
+    },
+    "workflow_instance_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Идентификатор конкретного экземпляра workflow. Используется для расследования цепочки событий между несколькими агентами, даже если общий workflow_id переиспользуется в нескольких запусках."
+    },
+    "parent_agent_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "Идентификатор агента, который передал задачу дочернему агенту. Для одиночного агента указывается null."
+    },
+    "child_agent_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "Идентификатор агента, которому передана задача. Для одиночного агента указывается null."
+    },
+    "handoff_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "Идентификатор конкретной передачи задачи между агентами. Связывает событие передачи и последующие действия дочернего агента."
+    },
+    "delegation_scope": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/delegation_scope_object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Машиночитаемая область полномочий, переданная дочернему агенту. Для одиночного агента указывается null."
+    },
+    "delegation_scope_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "Хэш канонического представления delegation_scope. Нужен для проверки, что область полномочий не изменилась между передачей задачи и исполнением."
+    },
+    "tool_call_chain_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "Идентификатор цепочки вызовов инструмента. Позволяет связать запрос, согласование, выполнение и отказ policy по одному внешнему инструменту."
+    },
+    "initiated_by": {
+      "$ref": "#/$defs/runtime_actor",
+      "description": "Исходный инициатор цепочки действий: человек, сервисная учётная запись, scheduler, система или агент."
+    },
+    "executed_by": {
+      "$ref": "#/$defs/runtime_actor",
+      "description": "Субъект, который фактически выполнил событие: агент, сервисная учётная запись, connector или системный компонент."
+    },
+    "actor_type": {
+      "type": "string",
+      "description": "Тип субъекта, инициировавшего событие.",
+      "enum": [
+        "human_user",
+        "service_account",
+        "agent",
+        "system",
+        "scheduler",
+        "connector"
+      ]
+    },
+    "actor_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Псевдонимизированный идентификатор субъекта или service account. Не хранит персональные данные в raw form."
+    },
+    "action_type": {
+      "type": "string",
+      "description": "Тип воздействия действия. Значение помогает отличить чтение, внутреннее изменение, внешнее изменение, разрушительное действие и security-sensitive действие.",
+      "enum": [
+        "none",
+        "read_only",
+        "internal_state_change",
+        "external_state_change",
+        "destructive",
+        "irreversible_or_financial",
+        "access_control_change",
+        "security_control_change"
+      ]
+    },
+    "tool_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Стабильный идентификатор tool из registry, tool inventory или action policy."
+    },
+    "tool_name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Имя tool, если событие связано с tool call."
+    },
+    "connector_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Идентификатор connector, если событие связано с connector."
+    },
+    "action_name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Имя действия из policy или action catalog."
+    },
+    "action_risk_level": {
+      "type": "string",
+      "description": "Уровень риска действия для агентного сценария; не заменяет risk taxonomy из базовых документов.",
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "policy_decision": {
+      "type": "string",
+      "description": "Решение policy для события.",
+      "enum": [
+        "allow",
+        "deny",
+        "approval_required",
+        "approved",
+        "not_applicable"
+      ]
+    },
+    "approval_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Идентификатор approval record, если событие требует или использует approval."
+    },
+    "input_reference": {
+      "$ref": "#/$defs/content_reference",
+      "description": "Ссылка или хэш входных данных. Raw sensitive content не хранится."
+    },
+    "output_reference": {
+      "$ref": "#/$defs/content_reference",
+      "description": "Ссылка или хэш результата. Raw sensitive content не хранится."
+    },
+    "data_classification": {
+      "type": "string",
+      "description": "Класс данных по существующей модели классификации.",
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted",
+        "unknown"
+      ]
+    },
+    "memory_operation": {
+      "type": "string",
+      "description": "Операция с memory, если она была выполнена.",
+      "enum": [
+        "none",
+        "read",
+        "write",
+        "update",
+        "delete"
+      ]
+    },
+    "external_side_effect": {
+      "type": "boolean",
+      "description": "Признак воздействия на внешнюю систему, сообщение, запись, transaction или другой внешний state."
+    },
+    "status": {
+      "type": "string",
+      "description": "Статус обработки события.",
+      "enum": [
+        "requested",
+        "approved",
+        "denied",
+        "executed",
+        "failed",
+        "paused",
+        "resumed",
+        "quarantined",
+        "disabled",
+        "retired",
+        "reenabled",
+        "revoked",
+        "started",
+        "completed",
+        "stopped"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Причина события или перехода состояния. Для событий перехода состояния поле обязательно и не должно содержать секреты, персональные данные или raw sensitive content."
+    },
+    "previous_state": {
+      "$ref": "#/$defs/runtime_state",
+      "description": "Предыдущее состояние агента, коннектора, согласования или процесса отката. Для событий перехода состояния поле обязательно."
+    },
+    "new_state": {
+      "$ref": "#/$defs/runtime_state",
+      "description": "Новое состояние агента, коннектора, согласования или процесса отката. Для событий перехода состояния поле обязательно."
+    },
+    "error_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Код ошибки без raw sensitive content."
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Идентификатор для связи событий исполнения, approval records и evidence pack."
+    },
+    "evidence_uri": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri-reference",
+      "description": "Ссылка на evidence. Не должна содержать секреты или персональные данные."
+    },
+    "evidence_ref": {
+      "type": "string",
+      "minLength": 1,
+      "format": "uri-reference",
+      "description": "Каноническая ссылка на подтверждение перехода состояния. Для событий перехода состояния поле обязательно; значение не должно содержать секреты, персональные данные или raw sensitive content."
+    }
+  },
+  "$defs": {
+    "state_transition_event_type": {
+      "type": "string",
+      "enum": [
+        "agent_quarantined",
+        "agent_disabled",
+        "agent_retired",
+        "agent_reenabled",
+        "connector_quarantined",
+        "approval_revoked",
+        "rollback_started",
+        "rollback_completed"
+      ]
+    },
+    "state_transition_required": {
+      "required": [
+        "event_id",
+        "event_type",
+        "timestamp",
+        "agent_id",
+        "actor_id",
+        "reason",
+        "previous_state",
+        "new_state",
+        "evidence_ref"
+      ]
+    },
+    "handoff_event_type": {
+      "type": "string",
+      "enum": [
+        "agent_handoff_requested",
+        "agent_handoff_completed"
+      ]
+    },
+    "handoff_required": {
+      "required": [
+        "workflow_instance_id",
+        "parent_agent_id",
+        "child_agent_id",
+        "handoff_id",
+        "delegation_scope",
+        "delegation_scope_hash",
+        "initiated_by",
+        "executed_by"
+      ],
+      "properties": {
+        "parent_agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "child_agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "delegation_scope": {
+          "$ref": "#/$defs/delegation_scope_object"
+        },
+        "delegation_scope_hash": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "tool_call_event_type": {
+      "type": "string",
+      "enum": [
+        "tool_call_requested",
+        "tool_call_approved",
+        "tool_call_denied",
+        "tool_call_executed"
+      ]
+    },
+    "tool_related_event_type": {
+      "type": "string",
+      "enum": [
+        "approval_required",
+        "human_approval_recorded",
+        "policy_denied",
+        "connector_error"
+      ]
+    },
+    "tool_call_required": {
+      "required": [
+        "workflow_instance_id",
+        "tool_call_chain_id",
+        "tool_id",
+        "tool_name",
+        "initiated_by",
+        "executed_by"
+      ],
+      "properties": {
+        "tool_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_call_chain_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "runtime_actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "actor_type": {
+                "const": "agent"
+              }
+            },
+            "required": [
+              "actor_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "agent_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ],
+      "required": [
+        "actor_type",
+        "actor_id",
+        "agent_id"
+      ],
+      "properties": {
+        "actor_type": {
+          "type": "string",
+          "enum": [
+            "human_user",
+            "service_account",
+            "agent",
+            "system",
+            "scheduler",
+            "connector"
+          ]
+        },
+        "actor_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Псевдонимизированный идентификатор субъекта без raw sensitive content."
+        },
+        "agent_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Заполняется, если субъектом является агент; иначе указывается null."
+        }
+      }
+    },
+    "delegation_scope_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope_type",
+        "authority_id",
+        "allowed_action_ids",
+        "constraints",
+        "expires_at"
+      ],
+      "properties": {
+        "scope_type": {
+          "type": "string",
+          "enum": [
+            "read_only",
+            "write_limited",
+            "approval_required",
+            "handoff_only",
+            "tool_limited"
+          ]
+        },
+        "authority_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_action_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "runtime_state": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "registered",
+        "approved_for_pilot",
+        "active",
+        "paused",
+        "quarantined",
+        "disabled",
+        "retired",
+        "requested",
+        "approved",
+        "denied",
+        "expired",
+        "revoked",
+        "not_started",
+        "rollback_in_progress",
+        "rollback_completed",
+        "failed",
+        "unknown"
+      ]
+    },
+    "content_reference": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "reference_type",
+        "reference_value",
+        "content_hash",
+        "data_classification"
+      ],
+      "properties": {
+        "reference_type": {
+          "type": "string",
+          "enum": [
+            "none",
+            "uri",
+            "object_key",
+            "hash",
+            "ticket_id",
+            "record_id"
+          ]
+        },
+        "reference_value": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ссылка на объект или псевдонимизированный идентификатор."
+        },
+        "content_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Хэш содержимого, если его можно безопасно хранить."
+        },
+        "data_classification": {
+          "type": "string",
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted",
+            "unknown"
+          ]
+        }
+      }
+    }
+  }
+}

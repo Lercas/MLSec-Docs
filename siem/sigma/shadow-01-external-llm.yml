@@ -1,0 +1,46 @@
+title: Shadow AI - External LLM Domain Access
+id: 042907d9-1661-50af-ac58-b932e12d2fea
+name: shadow-01-external-llm
+status: experimental
+description: |
+  Обнаружение обращения к публичным LLM-сервисам с корпоративного endpoint,
+  минуя корпоративный LLM gateway. Покрываются популярные провайдеры и
+  российские bypass-паттерны.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-05-shadow-ai-leak.md
+tags:
+  - owasp.llm06-2025
+  - atlas.tactic.ta0005
+logsource:
+  category: proxy
+detection:
+  selection:
+    event.category: 'network-connection'
+    destination.domain|endswith:
+      - '.openai.com'
+      - '.anthropic.com'
+      - '.claude.ai'
+      - '.deepseek.com'
+      - '.mistral.ai'
+      - '.perplexity.ai'
+      - '.groq.com'
+      - '.cohere.com'
+      - '.together.ai'
+      - '.fireworks.ai'
+      - '.replicate.com'
+      - '.huggingface.co'
+      - '.gemini.google.com'
+      - '.poe.com'
+      - '.character.ai'
+    source.user.is_service: false
+    policy.sanctioned_gateway: false
+  selection_body_size:
+    event.category: 'network-connection'
+    http.request.body.bytes|gte: 4096
+  condition: selection and selection_body_size
+falsepositives:
+  - Легитимное исследование на выделенной research-машине (должна быть в отдельном scope)
+  - Маркетинг / документация (должен использоваться sanctioned path)
+level: medium

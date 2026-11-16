@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>Agent-02 Tool Abuse (call rate spike)</name>
+  <id>agent-02-tool-abuse</id>
+  <severity>high</severity>
+  <type>threshold</type>
+  <description>Аномально высокая частота tool calls от одного агента/сессии (120+ в минуту). Индикатор prompt injection, infinite loop, обхода rate-limit.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <window>60</window>
+  <threshold>120</threshold>
+  <groupBy>agent.id,session.id</groupBy>
+  <selectors>
+    <selector id="tool_call">
+      <filter><and>
+        <eq field="DeviceProduct" value="AgentBroker"/>
+        <eq field="DeviceEventCategory" value="agent-tool-call"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition><selector>tool_call</selector></condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>high</severity>
+      <category>ML-AGENT-BREACH</category>
+      <playbook>IR-04</playbook>
+    </action>
+  </actions>
+</rule>

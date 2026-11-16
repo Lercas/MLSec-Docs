@@ -1,0 +1,35 @@
+title: ML Model Drift Anomaly
+id: c5fee396-464c-57e4-b4ff-dd190f43a0de
+name: ml-02-drift-anomaly
+status: experimental
+description: |
+  Обнаружение аномальных изменений метрик или распределения предсказаний модели,
+  которые могут свидетельствовать о data poisoning, backdoor, либо о деградации.
+  Порог 3σ от baseline. Для Tier 1 моделей рекомендуется 2σ.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-01-data-poisoning.md
+tags:
+  - atlas.tactic.ta0003
+  - atlas.technique.t0020
+logsource:
+  product: ml-monitoring
+  service: drift-detector
+detection:
+  selection:
+    metric.name|endswith:
+      - '.accuracy'
+      - '.f1'
+      - '.auc'
+      - '.psi'
+      - '.ks_statistic'
+    metric.deviation_sigma|gte: 3
+    model.tier:
+      - 1
+      - 2
+  condition: selection
+falsepositives:
+  - Сезонность, объяснимая бизнес-процессом (требуется корреляция с календарём релизов)
+  - Запланированное обновление датасета
+level: high

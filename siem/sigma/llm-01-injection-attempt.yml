@@ -1,0 +1,41 @@
+title: LLM Prompt Injection Attempt
+id: 212e35eb-29fd-54e0-a4ab-e415d896ee5c
+name: llm-01-injection-attempt
+status: experimental
+description: |
+  Обнаружение попыток prompt injection (direct или indirect). Срабатывает на:
+  известные паттерны («ignore previous instructions» и пр.), высокий score от
+  Prompt Shield / Lakera / собственного классификатора, наличие payload в RAG.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - https://genai.owasp.org/llmrisk/llm01-prompt-injection/
+  - playbooks/IR-03-prompt-injection-campaign.md
+tags:
+  - atlas.tactic.ta0005
+  - atlas.technique.t0051
+  - owasp.llm01-2025
+logsource:
+  product: llm-gateway
+  service: guardrails
+detection:
+  selection_guard_score:
+    event.category: 'llm-request'
+    guard.category: 'prompt-injection'
+    guard.score|gte: 0.85
+  selection_signature:
+    event.category: 'llm-request'
+    prompt.text|contains|all:
+      - 'ignore'
+      - 'previous instructions'
+  selection_signature_alt:
+    event.category: 'llm-request'
+    prompt.text|re: '(?i)(print your (system|initial) prompt|repeat everything above|what are your instructions|you are now (a|an) \w+)'
+  selection_indirect:
+    event.category: 'rag-retrieval'
+    retrieved.contains_injection_marker: true
+  condition: 1 of selection_*
+falsepositives:
+  - Red team / security testing (должен запускаться из known account)
+  - Легальное обсуждение темы prompt injection в документации
+level: medium

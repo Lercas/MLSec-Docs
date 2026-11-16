@@ -1,0 +1,171 @@
+# Иллюстративные Prometheus alert rules для AI agents.
+# Метрики ниже являются vendor-neutral placeholders и должны строиться из событий исполнения,
+# совместимых с agent-runtime-events.schema.json.
+# Не используйте реальные hostnames, usernames, tokens или production URLs.
+# Runtime mapping и ограничения: README.md#bounded-telemetry.
+# agent_id/connector_id/action_name берутся только из ограниченного inventory; reason — enum,
+# не свободный текст. workflow/run/tenant/approval/job IDs, URI и hashes не являются labels.
+# agent_action_validation_failures_total{check} — отдельный проектный counter trusted gate:
+# check=external_action_approval означает отказ привязки approval к конкретному external action.
+# agent_active_workflow_step_limit_violations_total считает превышения по каждому run в runtime,
+# но экспортирует только agent_id. agent_telemetry_dropped_total{reason} считает потери,
+# agent_telemetry_last_success_timestamp_seconds — последний успешный end-to-end delivery.
+# Это не новые события JSON Schema. Exporter отсутствует: counters нельзя считать готовыми.
+# before deployment: promtool check rules + temporal fixtures + проверка маршрута до owner.
+
+groups:
+  - name: ai_agent_runtime_alerts
+    rules:
+      - alert: AgentHighPolicyDenialRate
+        expr: sum by (agent_id) (rate(agent_runtime_events_total{event_type="policy_denied"}[5m])) > 0.20
+        for: 10m
+        labels:
+          severity: high
+          owner: "agent-owner-placeholder"
+        annotations:
+          summary: "Высокая частота policy_denied для AI-агента"
+          description: "Agent {{ $labels.agent_id }} генерирует повышенную частоту policy_denied. Проверьте action policy, tool scope и возможный prompt injection."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentRepeatedApprovalBypassAttempts
+        expr: sum by (agent_id) (increase(agent_runtime_events_total{event_type="policy_denied", policy_decision="deny", reason="approval_bypass_attempt"}[10m])) >= 3
+        for: 5m
+        labels:
+          severity: critical
+          owner: "security-owner-placeholder"
+        annotations:
+          summary: "Повторяющиеся попытки обхода согласования"
+          description: "Agent {{ $labels.agent_id }} получил несколько отказов из-за обхода согласования. Требуется pause или disable до проверки approval flow."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentToolCallSpike
+        expr: sum by (agent_id) (rate(agent_runtime_events_total{event_type="tool_call_requested"}[5m])) > 2 * sum by (agent_id) (rate(agent_runtime_events_total{event_type="tool_call_requested"}[1h] offset 1h))
+        for: 10m
+        labels:
+          severity: medium
+          owner: "platform-owner-placeholder"
+        annotations:
+          summary: "Всплеск tool calls"
+          description: "Agent {{ $labels.agent_id }} показывает резкий рост tool_call_requested. Проверьте loop behavior, schedule и runtime limits."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentConnectorErrorSpike
+        expr: sum by (agent_id, connector_id) (rate(agent_runtime_events_total{event_type="connector_error"}[5m])) > 0.10
+        for: 10m
+        labels:
+          severity: high
+          owner: "connector-owner-placeholder"
+        annotations:
+          summary: "Всплеск connector_error"
+          description: "Connector {{ $labels.connector_id }} для agent {{ $labels.agent_id }} возвращает много ошибок. Проверьте connector overreach, compromise или misconfiguration."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentMemoryWriteSpike
+        expr: sum by (agent_id) (rate(agent_runtime_events_total{event_type="memory_write"}[5m])) > 0.15
+        for: 10m
+        labels:
+          severity: high
+          owner: "agent-owner-placeholder"
+        annotations:
+          summary: "Всплеск memory_write"
+          description: "Agent {{ $labels.agent_id }} выполняет необычно много memory_write. Проверьте memory poisoning, retention и source trust."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentKillSwitchTriggered
+        expr: increase(agent_runtime_events_total{event_type="kill_switch_triggered"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          owner: "security-owner-placeholder"
+        annotations:
+          summary: "Сработал kill switch"
+          description: "Для agent {{ $labels.agent_id }} сработал kill switch. Требуется incident review, evidence preservation и re-enable только после retest."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentRuntimeStateChanged
+        expr: increase(agent_runtime_events_total{event_type=~"agent_quarantined|agent_disabled|agent_retired|approval_revoked|connector_quarantined"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: high
+          owner: "platform-owner-placeholder"
+        annotations:
+          summary: "Зафиксирован переход состояния runtime"
+          description: "Agent {{ $labels.agent_id }} сгенерировал событие перехода состояния. Проверьте reason, previous_state, new_state и evidence_ref."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentRollbackEvent
+        expr: increase(agent_runtime_events_total{event_type=~"rollback_started|rollback_completed"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: medium
+          owner: "rollback-owner-placeholder"
+        annotations:
+          summary: "Зафиксирован rollback event"
+          description: "Для agent {{ $labels.agent_id }} зафиксирован rollback_started или rollback_completed. Проверьте diff, владельца отката и результат повторного тестирования."
+          runbook: "34-ai-agents-runtime-procedure.md"
+
+      - alert: AgentLoopSuspected
+        expr: sum by (agent_id) (increase(agent_active_workflow_step_limit_violations_total[10m])) > 0
+        for: 5m
+        labels:
+          severity: high
+          owner: "platform-owner-placeholder"
+        annotations:
+          summary: "Подозрение на agent loop"
+          description: "Runtime обнаружил превышение шагов отдельного активного run у agent {{ $labels.agent_id }}. Workflow reference ищите в защищённом журнале; run ID не экспортируется как label."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentUnauthorizedActionAttempts
+        expr: sum by (agent_id, action_name) (rate(agent_runtime_events_total{event_type="policy_denied", policy_decision="deny"}[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: high
+          owner: "agent-owner-placeholder"
+        annotations:
+          summary: "Попытки неразрешённого действия"
+          description: "Agent {{ $labels.agent_id }} пытается выполнить action {{ $labels.action_name }} вне policy."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentExpiredApprovalUsage
+        expr: increase(agent_runtime_events_total{event_type="policy_denied", reason="approval_expired"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          owner: "agent-owner-placeholder"
+        annotations:
+          summary: "Попытка использовать expired approval"
+          description: "Agent attempted action with expired approval. Проверьте approval record, зафиксируйте approval_revoked для отзыва и выполните regression eval."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentExternalSideEffectAnomaly
+        expr: sum by (agent_id) (increase(agent_action_validation_failures_total{check="external_action_approval"}[15m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          owner: "security-owner-placeholder"
+        annotations:
+          summary: "Trusted gate отклонил approval для external action"
+          description: "Для agent {{ $labels.agent_id }} не прошла проверка approval конкретной операции. Проверьте stateful evidence join, а также независимый readback: counter не доказывает, что внешний эффект произошёл или был предотвращён."
+          runbook: "examples/agents/runbook-connector-quarantine.md"
+
+      - alert: AgentTelemetryDropped
+        expr: sum by (agent_id) (increase(agent_telemetry_dropped_total[5m])) > 0
+        for: 0m
+        labels:
+          severity: high
+          owner: "platform-owner-placeholder"
+        annotations:
+          summary: "Потеря agent audit telemetry"
+          description: "Проверьте bounded queue, ingress/schema/cardinality rejection и режим dispatch при потере критичного аудита."
+          runbook: "examples/agents/README.md"
+
+      - alert: AgentTelemetryDeliveryStale
+        expr: time() - agent_telemetry_last_success_timestamp_seconds > 300
+        for: 5m
+        labels:
+          severity: high
+          owner: "platform-owner-placeholder"
+        annotations:
+          summary: "Agent telemetry не доставляется вовремя"
+          description: "Порог 300 секунд иллюстративный. Полное отсутствие ряда требует отдельного inventory/up check; stale gauge не обнаруживает отсутствующий ряд автоматически."
+          runbook: "examples/agents/README.md"

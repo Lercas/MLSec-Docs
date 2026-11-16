@@ -1,3 +1,5 @@
+> Предыдущая редакция (2025). Актуальные главы и практические материалы: [MLSec Docs](README.md), [полное оглавление](00-INDEX.md) и [milksec.com](https://milksec.com).
+
 - [[#Архитектура процесса ML SecOps|Архитектура процесса ML SecOps]]
 	- [[#Архитектура процесса ML SecOps#Управление данными (Data Engineering)|Управление данными (Data Engineering)]]
 	- [[#Архитектура процесса ML SecOps#Разработка и обучение моделей (Model Development & Training)|Разработка и обучение моделей (Model Development & Training)]]

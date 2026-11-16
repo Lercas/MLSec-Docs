@@ -1,0 +1,20 @@
+(index=aws_cloudtrail OR index=s3_access OR index=minio_audit) eventName IN ("GetObject","s3:GetObject","GET.OBJECT")
+| where match('requestParameters.key', "(?i)\.(safetensors|bin|gguf|onnx|pt|ckpt|pb)$|/models/|/artifacts/")
+| eval size_mb = coalesce('additionalEventData.bytesTransferredOut', 'responseElements.contentLength') / 1048576
+| where size_mb >= 100
+| eval detection="ml-04-artifact-get", severity="high"
+| table _time, detection, severity, userIdentity.userName, sourceIPAddress, requestParameters.bucketName, requestParameters.key, size_mb
+| append [
+    search (index=endpoint_dlp OR index=proxy) earliest=-1h
+    | where 'event.action'="egress"
+    | where 'destination.category' IN ("cloud-storage","file-sharing","personal-webmail")
+    | where match('file.name', "(?i)\.(safetensors|bin|gguf|onnx|pt|ckpt)$")
+    | eval detection="ml-04-egress-upload", severity="critical"
+    | table _time, detection, severity, user.name, src_ip, destination.domain, file.name, file.size_bytes ]
+| append [
+    search index=mlops sourcetype=dvc action=pull earliest=-1h
+    | where 'actor.type'="human"
+    | stats sum(size_gb) as total_gb by actor.name, _time
+    | where total_gb >= 5
+    | eval detection="ml-04-dvc-mass-pull", severity="high"
+    | table _time, detection, severity, actor.name, total_gb ]

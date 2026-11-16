@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>LLM-01 Prompt Injection Attempt</name>
+  <id>llm-01-injection-attempt</id>
+  <severity>medium</severity>
+  <type>correlation</type>
+  <description>Попытка prompt injection: сработал guardrail с высоким score, известная сигнатура в тексте, либо detection индикатора в RAG-чанке.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="guard_score">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <eq field="DeviceCustomString1" value="prompt-injection"/>
+        <gte field="DeviceCustomFloatingPoint1" value="0.85"/>
+      </and></filter>
+    </selector>
+    <selector id="signature">
+      <filter><or>
+        <contains field="Message" value="ignore previous instructions"/>
+        <contains field="Message" value="ignore prior instructions"/>
+        <regex field="Message" pattern="(?i)(print your (system|initial) prompt|repeat everything above|what are your instructions|you are now (a|an) \w+)"/>
+      </or></filter>
+    </selector>
+    <selector id="indirect">
+      <filter><and>
+        <eq field="DeviceEventCategory" value="rag-retrieval"/>
+        <eq field="DeviceCustomString2" value="injection-marker"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition>
+      <any>
+        <selector>guard_score</selector>
+        <selector>signature</selector>
+        <selector>indirect</selector>
+      </any>
+    </condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>medium</severity>
+      <category>ML-INJECTION</category>
+      <playbook>IR-03</playbook>
+    </action>
+  </actions>
+</rule>

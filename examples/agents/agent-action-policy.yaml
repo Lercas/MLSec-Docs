@@ -1,0 +1,462 @@
+# Пример policy-as-code для действий AI-агента.
+# Проектная модель milksec-agent-examples/1.0; это не поддерживаемая runtime-конфигурация
+# конкретного framework/OPA/Cedar. Адаптер, enforcement и его тесты реализуют отдельно (README.md).
+# Исторические сроки ниже истекли; их нельзя считать актуальным разрешением.
+# Значения являются placeholders. Не используйте здесь реальные секреты, токены, URL или персональные данные.
+
+metadata:
+  policy_id: "agent-action-policy-example"
+  policy_version: "1.0.0"
+  name: "Example AI agent action policy"
+  description: "Пример ограничений для agent actions, согласования и emergency controls."
+  owner: "team-or-role-placeholder"
+  review_cycle: "quarterly"
+  created_at: "2026-05-13T00:00:00Z"
+  expires_at: "2026-08-13T00:00:00Z"
+  baseline_references:
+    - "01-AI-CASE-ASSESSMENT-REGULATION.md"
+    - "02-AI-SECURITY-STANDARD.md"
+    - "03-AI-SYSTEM-REGISTRY.md"
+    - "06-RACI-MATRIX.md"
+
+# Идентичность агента должна совпадать с записью в существующем AI system registry.
+agent_identity:
+  agent_id: "agent-placeholder-001"
+  agent_name: "Example controlled action agent"
+  agent_version: "0.1.0"
+  runtime_identity_type: "service_account"
+  runtime_identity_id: "svc-agent-placeholder"
+  acting_on_behalf_of_allowed: false
+  accountable_role: "business-owner-placeholder"
+
+# Классификация не заменяет risk taxonomy из базовых документов. Она уточняет controls для агентного сценария.
+classification:
+  agent_pattern: "approval_gated_action_agent"
+  action_risk_default: "medium"
+  data_classification_allowed:
+    - "public"
+    - "internal"
+  production_stage: "pilot"
+  external_side_effects_allowed: false
+
+# Делегированные полномочия должны быть узкими, проверяемыми и ограниченными по времени.
+delegated_authority:
+  authority_id: "delegation-placeholder-001"
+  granted_by: "approver-role-placeholder"
+  granted_at: "2026-05-13T00:00:00Z"
+  expires_at: "2026-08-13T00:00:00Z"
+  allowed_actions:
+    - action_name: "read_ticket"
+      system: "ticketing-system-placeholder"
+      objects:
+        - "ticket"
+      max_scope: "project:EXAMPLE"
+    - action_name: "search_ticket"
+      system: "ticketing-system-placeholder"
+      objects:
+        - "ticket"
+      max_scope: "project:EXAMPLE"
+    - action_name: "prepare_ticket_update"
+      system: "ticketing-system-placeholder"
+      objects:
+        - "ticket_comment"
+      max_scope: "project:EXAMPLE"
+  approval_required_actions:
+    - "execute_ticket_update"
+    - "lookup_internal_group"
+    - "send_external_message"
+    - "run_bulk_update"
+  privileged_actions:
+    - "lookup_internal_group"
+    - "send_external_message"
+    - "run_bulk_update"
+  denied_actions:
+    - "delete_record"
+    - "modify_access_control"
+    - "execute_payment"
+  evidence_location: "registry-or-review-record-placeholder"
+
+# Разрешённые tools/connectors и область их действия.
+tool_scopes:
+  - tool_name: "ticket_reader"
+    tool_id: "tool-ticket-reader-placeholder"
+    connector_id: "ticketing-readonly-placeholder"
+    mode: "read_only"
+    allowed_actions:
+      - "read_ticket"
+      - "search_ticket"
+    data_scope:
+      projects:
+        - "EXAMPLE"
+      max_records_per_run: 50
+    approval_required: false
+  - tool_name: "ticket_writer"
+    tool_id: "tool-ticket-writer-placeholder"
+    connector_id: "ticketing-write-placeholder"
+    mode: "write"
+    allowed_actions:
+      - "execute_ticket_update"
+    data_scope:
+      projects:
+        - "EXAMPLE"
+      max_records_per_run: 10
+    approval_required: true
+  - tool_name: "privileged_directory_lookup"
+    tool_id: "tool-directory-lookup-placeholder"
+    connector_id: "directory-privileged-placeholder"
+    mode: "privileged_read"
+    allowed_actions:
+      - "lookup_internal_group"
+    data_scope:
+      groups:
+        - "GROUP-PLACEHOLDER"
+      max_records_per_run: 25
+    approval_required: true
+
+# Правила действий. Сначала применяются запреты и глобальные ограничения; затем match.
+# Первое совпадение не должно обходить deny, срок/отзыв delegation или external_side_effects_allowed=false.
+action_rules:
+  - rule_id: "read-only-action"
+    action_id: "action-read-ticket"
+    description: "Разрешает чтение в пределах утверждённой области."
+    match:
+      action_name: "read_ticket"
+      action_type: "read_only"
+      tool_id: "tool-ticket-reader-placeholder"
+      tool_name: "ticket_reader"
+      external_side_effect: false
+    decision: "allow"
+    required_evidence:
+      - "tool_call_requested"
+      - "tool_call_executed"
+  - rule_id: "search-read-only-action"
+    action_id: "action-search-ticket"
+    description: "Разрешает поиск ticket в пределах утверждённой области."
+    match:
+      action_name: "search_ticket"
+      action_type: "read_only"
+      tool_id: "tool-ticket-reader-placeholder"
+      tool_name: "ticket_reader"
+      external_side_effect: false
+    decision: "allow"
+    required_evidence:
+      - "tool_call_requested"
+      - "tool_call_executed"
+  - rule_id: "approval-required-action"
+    action_id: "action-execute-ticket-update"
+    description: "Требует approval перед изменением ticket."
+    match:
+      action_name: "execute_ticket_update"
+      action_type: "internal_state_change"
+      tool_id: "tool-ticket-writer-placeholder"
+      tool_name: "ticket_writer"
+      external_side_effect: false
+    decision: "approval_required"
+    approval_rule_id: "single-owner-approval"
+    required_evidence:
+      - "approval_required"
+      - "human_approval_recorded"
+      - "tool_call_executed"
+  - rule_id: "deny-action"
+    action_id: "action-delete-record"
+    description: "Запрещает удаление записей."
+    match:
+      action_name: "delete_record"
+      action_type: "destructive"
+    decision: "deny"
+    required_evidence:
+      - "policy_denied"
+  - rule_id: "privileged-connector-action"
+    action_id: "action-lookup-internal-group"
+    description: "Требует approval для privileged connector."
+    match:
+      connector_id: "directory-privileged-placeholder"
+      tool_id: "tool-directory-lookup-placeholder"
+      action_type: "read_only"
+      action_name: "lookup_internal_group"
+    decision: "approval_required"
+    privileged_action: true
+    explicit_approval_required: true
+    approval_rule_id: "two-person-approval"
+    required_evidence:
+      - "approval_required"
+      - "human_approval_recorded"
+  - rule_id: "external-side-effect-action"
+    action_id: "action-send-external-message"
+    description: "Запрещает внешние side effects без отдельного approval."
+    match:
+      action_name: "send_external_message"
+      action_type: "external_state_change"
+      external_side_effect: true
+    decision: "approval_required"
+    privileged_action: true
+    explicit_approval_required: true
+    approval_rule_id: "two-person-approval"
+    required_evidence:
+      - "approval_required"
+      - "human_approval_recorded"
+  - rule_id: "financial-legal-security-sensitive-action"
+    action_id: "action-financial-legal-security-sensitive"
+    description: "Блокирует финансовые, юридические и security-sensitive действия без исключения."
+    match:
+      action_type: "irreversible_or_financial"
+      action_tags:
+        - "financial"
+        - "legal"
+        - "security_sensitive"
+    decision: "deny"
+    required_evidence:
+      - "policy_denied"
+  - rule_id: "bulk-operation"
+    action_id: "action-run-bulk-update"
+    description: "Требует двух согласующих для bulk operation."
+    match:
+      action_name: "run_bulk_update"
+    decision: "approval_required"
+    privileged_action: true
+    explicit_approval_required: true
+    approval_rule_id: "two-person-approval"
+    required_evidence:
+      - "approval_required"
+      - "human_approval_recorded"
+  - rule_id: "emergency-kill-switch-trigger"
+    action_id: "action-emergency-kill-switch"
+    description: "Запускает kill switch при попытке обойти policy."
+    match:
+      anomaly_type: "policy_bypass_attempt"
+    decision: "kill_switch"
+    required_evidence:
+      - "anomaly_detected"
+      - "kill_switch_triggered"
+
+# Правила approval описывают, кто и как подтверждает действие.
+# Наличие approval_id недостаточно: требуется trusted action binding, точный snapshot аргументов,
+# актуальные роли разных людей, policy/delegation и атомарная защита от повторного исполнения.
+# Всё проверяется заново непосредственно перед dispatch, включая очередь, retry и resume.
+approval_rules:
+  - approval_rule_id: "single-owner-approval"
+    approval_type: "single_approver"
+    required_approver_roles:
+      - "agent-owner-placeholder"
+    expires_after: "PT4H"
+    approval_record_schema: "agent-approval-record.schema.json"
+    approval_record_required_fields:
+      - "agent_id"
+      - "action_id"
+      - "requested_by"
+      - "approval_scope"
+      - "expires_at"
+  - approval_rule_id: "two-person-approval"
+    approval_type: "two_person"
+    required_approver_roles:
+      - "agent-owner-placeholder"
+      - "security-reviewer-placeholder"
+    require_distinct_approvers: true
+    require_unique_approver_ids: true
+    require_scope_not_all_without_justification: true
+    expires_after: "PT2H"
+    approval_record_schema: "agent-approval-record.schema.json"
+    approval_record_required_fields:
+      - "agent_id"
+      - "action_id"
+      - "requested_by"
+      - "approved_at"
+      - "approver_id"
+      - "approver_ids"
+      - "approval_scope"
+      - "expires_at"
+
+# Действия из этого списка запрещены независимо от других правил.
+denied_actions:
+  - action_name: "delete_record"
+    reason: "Удаление записей не входит в delegated authority."
+  - action_name: "modify_access_control"
+    reason: "Изменение прав доступа требует отдельного процесса по базовым документам."
+  - action_name: "execute_payment"
+    reason: "Финансовые действия запрещены для этого agent-case."
+
+# Правила разрешения конфликтов. Они применяются до выбора allow или approval_required.
+conflict_resolution:
+  precedence:
+    - "denied_actions"
+    - "approval_required_actions"
+    - "allowed_actions"
+  rules:
+    - rule_id: "deny-over-allow"
+      description: "Запрет сильнее разрешения: если action_name есть в denied_actions, итоговое решение всегда deny."
+      decision: "deny"
+      blocking: true
+    - rule_id: "risk-requires-approval"
+      description: "Рискованное действие требует согласования: privileged_actions и approval_required_actions не выполняются без approval_id."
+      decision: "approval_required"
+      blocking: true
+    - rule_id: "default-deny"
+      description: "Отсутствие явного разрешения означает запрет."
+      decision: "deny"
+      blocking: true
+
+# Примеры решений policy для проверки чтения человеком и автоматической валидации.
+policy_decision_examples:
+  - example_id: "allowed-read-ticket"
+    action_name: "read_ticket"
+    connector_id: "ticketing-readonly-placeholder"
+    tool_name: "ticket_reader"
+    expected_decision: "allow"
+    reason: "Статический пример внутри исторического окна: action/scope/connector совпадают. При истёкшей, отозванной delegation или недоступном policy store итог deny."
+  - example_id: "approval-required-ticket-update"
+    action_name: "execute_ticket_update"
+    connector_id: "ticketing-write-placeholder"
+    tool_name: "ticket_writer"
+    expected_decision: "approval_required"
+    reason: "Действие есть в delegated_authority.approval_required_actions и tool_scopes.allowed_actions."
+  - example_id: "denied-delete-record"
+    action_name: "delete_record"
+    connector_id: "ticketing-write-placeholder"
+    tool_name: "ticket_writer"
+    expected_decision: "deny"
+    reason: "Действие есть в denied_actions; запрет имеет приоритет над любым разрешением."
+
+# Предложение по автоматической проверке policy.
+policy_validation:
+  required_checks:
+    - check_id: "tool-scope-connectors-allowed"
+      description: "Каждый connector_id из tool_scopes должен быть указан в connector_rules.allowed_connectors."
+      blocking: true
+    - check_id: "tool-actions-have-delegated-authority"
+      description: "Каждый action_name из tool_scopes.allowed_actions должен быть в delegated_authority.allowed_actions, delegated_authority.approval_required_actions или delegated_authority.privileged_actions."
+      blocking: true
+    - check_id: "privileged-actions-require-approval"
+      description: "Каждый action_name из delegated_authority.privileged_actions должен быть в delegated_authority.approval_required_actions и иметь action_rule с decision=approval_required."
+      blocking: true
+    - check_id: "deny-overrides-allow"
+      description: "Ни один action_name из denied_actions не должен встречаться в delegated_authority.allowed_actions, delegated_authority.approval_required_actions или tool_scopes.allowed_actions."
+      blocking: true
+    - check_id: "default-deny-present"
+      description: "conflict_resolution должен содержать правило default-deny."
+      blocking: true
+  blocking_errors:
+    - "connector_id_missing_from_allowed_connectors"
+    - "allowed_action_missing_delegated_authority"
+    - "privileged_action_without_approval"
+    - "action_both_allowed_and_denied"
+    - "missing_default_deny_rule"
+
+# Ограничения частоты снижают blast radius.
+rate_limits:
+  per_agent:
+    max_tool_calls_per_minute: 20
+    max_write_actions_per_hour: 5
+    max_bulk_operations_per_day: 1
+  per_workflow:
+    max_actions_per_workflow: 25
+    max_approval_requests_per_workflow: 10
+  on_limit_exceeded:
+    decision: "deny"
+    event_type: "rate_limit_triggered"
+
+# Runtime limits ограничивают автономность выполнения.
+runtime_limits:
+  max_workflow_duration: "PT30M"
+  max_planning_steps: 8
+  max_retries_per_action: 2
+  allow_scheduled_execution: false
+  allow_autonomous_loop: false
+  require_human_review_before_external_side_effect: true
+
+# Memory по умолчанию запрещена, если она не согласована отдельно.
+# read допускается лишь для текущего разрешённого session scope: persistent_memory_allowed=false
+# не разрешает чтение старой persistent memory. Tombstones/TTL/ACL проверяются и после restore/resume.
+memory_rules:
+  persistent_memory_allowed: false
+  allowed_memory_operations:
+    - "none"
+    - "read"
+  memory_write_requires_approval: true
+  retention_period: "P0D"
+  raw_sensitive_content_allowed: false
+
+# Connector rules фиксируют минимальные ожидания к connector governance.
+connector_rules:
+  require_connector_allowlist: true
+  require_least_privilege_scope: true
+  prohibit_user_supplied_connector_credentials: true
+  require_connector_owner_approval: true
+  allowed_connectors:
+    - connector_id: "ticketing-readonly-placeholder"
+      owner: "connector-owner-placeholder"
+      mode: "read_only"
+    - connector_id: "ticketing-write-placeholder"
+      owner: "connector-owner-placeholder"
+      mode: "write"
+      approval_required: true
+    - connector_id: "directory-privileged-placeholder"
+      owner: "directory-owner-placeholder"
+      mode: "privileged_read"
+      approval_required: true
+      privileged_action: true
+      approval_rule_id: "two-person-approval"
+
+# Логирование должно ссылаться на данные, а не сохранять raw sensitive content.
+logging_requirements:
+  runtime_event_schema: "agent-runtime-events.schema.json"
+  required_event_types:
+    - "tool_call_requested"
+    - "approval_required"
+    - "human_approval_recorded"
+    - "approval_revoked"
+    - "agent_handoff_requested"
+    - "agent_handoff_completed"
+    - "tool_call_executed"
+    - "policy_denied"
+    - "connector_quarantined"
+    - "agent_disabled"
+    - "agent_reenabled"
+    - "rollback_started"
+    - "rollback_completed"
+    - "kill_switch_triggered"
+  log_raw_sensitive_content: false
+  use_references_or_hashes: true
+  evidence_uri_required: true
+  chain_fields_required:
+    - "workflow_instance_id"
+    - "initiated_by"
+    - "executed_by"
+    - "handoff_id"
+    - "delegation_scope_hash"
+    - "tool_call_chain_id"
+
+# Emergency controls задают условия остановки агента.
+# Факт kill_switch_triggered не доказывает остановку child/remote jobs: нужен отдельный readback.
+# Timeout после dispatch -> outcome=unknown в evidence sidecar; не повторять write автоматически.
+emergency_controls:
+  kill_switch_enabled: true
+  pause_enabled: true
+  disable_enabled: true
+  authorized_operators:
+    - "agent-owner-placeholder"
+    - "platform-operator-placeholder"
+    - "security-operator-placeholder"
+  kill_switch_triggers:
+    - trigger_id: "policy-bypass-attempt"
+      condition: "policy_bypass_attempt_detected"
+      event_type: "kill_switch_triggered"
+    - trigger_id: "repeated-policy-denials"
+      condition: "policy_denied_count >= 5 within PT10M"
+      event_type: "kill_switch_triggered"
+    - trigger_id: "privileged-connector-anomaly"
+      condition: "unexpected_privileged_connector_action"
+      event_type: "kill_switch_triggered"
+
+# Review and expiry фиксируют срок действия policy и условия повторного review.
+review_and_expiry:
+  review_cycle: "quarterly"
+  next_review_at: "2026-08-13T00:00:00Z"
+  expires_at: "2026-08-13T00:00:00Z"
+  material_change_triggers:
+    - "new_tool"
+    - "broader_connector_scope"
+    - "new_memory_type"
+    - "approval_policy_change"
+    - "autonomy_increase"
+    - "new_external_action"
+    - "model_or_provider_change"

@@ -1,0 +1,5 @@
+`llm_gateway_responses` earliest=-15m
+| where 'response.contains_canary'="true" OR 'response.system_prompt_similarity'>=0.8
+| eval detection="llm-03-system-prompt-leak", severity="high"
+| table _time, detection, severity, user_id, api_key_id, model, response.contains_canary, response.system_prompt_similarity, prompt.text_redacted
+| sort - response.system_prompt_similarity

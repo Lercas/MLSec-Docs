@@ -1,0 +1,9 @@
+`agent_broker_network` earliest=-15m
+| where coalesce('policy.allowlist_match',"unknown")!="true"
+| eval detection="agent-03-egress-anomaly", severity="high"
+| stats
+    count as connection_count,
+    values(destination.domain) as destinations,
+    sum(network.bytes_out) as total_egress_bytes
+    by agent.id, agent.owner, session.id, detection, severity
+| sort - total_egress_bytes

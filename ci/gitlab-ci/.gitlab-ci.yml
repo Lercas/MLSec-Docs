@@ -1,0 +1,187 @@
+# Integration scaffold: requires project-owned adapters, reviewed tool locks and trust data.
+# Disabled until explicit opt-in; see ci/README.md. Not a production-ready pipeline.
+# MLSec Full Pipeline для GitLab CI
+# Эквивалент github-actions/mlsec-pipeline.yml: data gate, train, test, ML gate, deploy.
+#
+# Использование: скопировать в корень репозитория как .gitlab-ci.yml,
+# или include: project: 'mlsec/common' file: 'ci/gitlab-ci/.gitlab-ci.yml'.
+
+workflow:
+  rules:
+    - if: '$MLSEC_INTEGRATION_ENABLED == "true" && $CI_COMMIT_REF_PROTECTED == "true"'
+    - when: never
+
+stages:
+  - data-gate
+  - train
+  - test
+  - ml-gate
+  - deploy-canary
+  - deploy-100
+
+variables:
+  PYTHON_VERSION: "3.12"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  REGISTRY: $CI_REGISTRY
+  IMAGE_NAME: $CI_REGISTRY_IMAGE
+  MODEL_TIER: "2"
+
+default:
+  image: python:${PYTHON_VERSION}
+  interruptible: false
+  tags: [mlsec]
+
+# ----------------------------------------------------------------------
+# GATE 1: DATA
+# ----------------------------------------------------------------------
+data-gate:
+  stage: data-gate
+  script:
+    - pip install "dvc[s3]==3.67.1" "great-expectations==1.25.0" "presidio-analyzer==2.2.366" "presidio-anonymizer==2.2.366"
+    - python -m spacy download ru_core_news_lg
+    - dvc pull
+    - bash ci/scripts/install-opa.sh /tmp/mlsec-opa
+    - /tmp/mlsec-opa eval -d opa/data-governance.rego -i data-card-input.json "data.ml.data_governance.allow" > data-gate.json
+    - jq -e '.result[0].expressions[0].value == true' data-gate.json
+    - python -m great_expectations checkpoint run data_checkpoint
+    - python scripts/pii_scan.py --input data/ --report reports/pii.json
+    - python scripts/poisoning_scan.py --input data/ --report reports/poisoning.json
+  artifacts:
+    name: data-reports
+    paths:
+      - reports/
+      - data-gate.json
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+
+# ----------------------------------------------------------------------
+# GATE 2: TRAIN (только main / release)
+# ----------------------------------------------------------------------
+train:
+  stage: train
+  needs: [data-gate]
+  script:
+    - pip install -r requirements.lock --require-hashes
+    - python train.py --config configs/train.yaml
+  artifacts:
+    name: model
+    paths:
+      - artifacts/model/
+    expire_in: 90 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+
+# ----------------------------------------------------------------------
+# GATE 3: TEST
+# ----------------------------------------------------------------------
+test:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+  stage: test
+  needs: [train]
+  script:
+    - pip install -r requirements.lock --require-hashes
+    - pytest tests/ -v --junit-xml=reports/junit.xml
+    - python scripts/adversarial_test.py --model artifacts/model/ --report reports/adv.json
+    - python scripts/bias_analysis.py --model artifacts/model/ --report reports/bias.json
+    - |
+      if [ "$MODEL_TIER" = "1" ] || [ "$MODEL_TIER" = "2" ]; then
+        pip install "garak==0.17.1"
+        garak --target_type huggingface --target_name artifacts/model/ \
+              --spec probes.promptinject,probes.encoding,probes.malwaregen --report_prefix reports/garak
+      fi
+  artifacts:
+    name: test-reports
+    paths: [reports/]
+    reports:
+      junit: reports/junit.xml
+    expire_in: 90 days
+
+# ----------------------------------------------------------------------
+# GATE 4: ML SECOPS GATE
+# ----------------------------------------------------------------------
+ml-gate:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+  stage: ml-gate
+  needs: [train, test]
+  image: python:${PYTHON_VERSION}
+  before_script:
+    - apt-get update && apt-get install -y jq curl
+    - bash ci/scripts/install-opa.sh /tmp/mlsec-opa
+    - curl -fsSL -o /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/download/v3.1.4/cosign-linux-amd64
+    - echo "${COSIGN_SHA256:?approved cosign v3.1.4 checksum required}  /usr/local/bin/cosign" | sha256sum -c -
+    - chmod +x /usr/local/bin/cosign
+  script:
+    - python scripts/build_opa_input.py --model artifacts/model/ --reports reports/ --out model-input.json
+    - /tmp/mlsec-opa eval -d opa/model-deployment.rego -d "${OPA_TRUST_DATA:?trusted verifier data file required}" -i model-input.json "data.ml.deployment.allow" > gate.json
+    - jq -e '.result[0].expressions[0].value == true' gate.json
+    - cosign sign-blob --key env://COSIGN_PRIVATE_KEY artifacts/model/model.safetensors --output-signature artifacts/model/model.safetensors.sig
+    - pip install "cyclonedx-bom==8.0.1"
+    - cyclonedx-py requirements requirements.lock -o artifacts/sbom.cdx.json
+    - python scripts/gen_mlbom.py --model artifacts/model/ --out artifacts/mlbom.cdx.json
+  artifacts:
+    name: signed-artifacts
+    paths: [artifacts/]
+    expire_in: 365 days
+
+# Trivy как отдельная задача
+trivy-scan:
+  stage: ml-gate
+  needs: []
+  image:
+    name: $MLSEC_TRIVY_IMAGE
+    entrypoint: [""]
+  script:
+    - trivy fs --exit-code 1 --severity CRITICAL,HIGH .
+  allow_failure: false
+
+# ----------------------------------------------------------------------
+# GATE 5: DEPLOY CANARY 10%
+# ----------------------------------------------------------------------
+deploy-canary:
+  resource_group: mlsec-production-rollout
+  stage: deploy-canary
+  needs: [ml-gate, trivy-scan]
+  image: $MLSEC_DEPLOY_IMAGE
+  environment:
+    name: production-canary
+    deployment_tier: staging
+  script:
+    - echo "$KUBECONFIG_DATA" | base64 -d > /tmp/kubeconfig && export KUBECONFIG=/tmp/kubeconfig
+    - echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - docker build -t "$IMAGE_NAME:$CI_COMMIT_SHA" .
+    - docker push "$IMAGE_NAME:$CI_COMMIT_SHA"
+    - cosign sign --key env://COSIGN_PRIVATE_KEY "$IMAGE_NAME:$CI_COMMIT_SHA"
+    - kubectl apply -f k8s/canary-10.yaml
+    - scripts/health_check.sh canary
+    - scripts/kill_switch_test.sh
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ----------------------------------------------------------------------
+# GATE 6: PROMOTE TO 100%
+# ----------------------------------------------------------------------
+deploy-100:
+  resource_group: mlsec-production-rollout
+  stage: deploy-100
+  needs: [deploy-canary]
+  image: $MLSEC_DEPLOY_IMAGE
+  environment:
+    name: production
+  when: manual
+  script:
+    - echo "$KUBECONFIG_DATA" | base64 -d > /tmp/kubeconfig && export KUBECONFIG=/tmp/kubeconfig
+    - kubectl apply -f k8s/canary-50.yaml
+    - scripts/metrics_check.sh 50
+    - kubectl apply -f k8s/canary-100.yaml
+    - scripts/metrics_check.sh 100
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

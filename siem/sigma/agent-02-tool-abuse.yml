@@ -1,0 +1,24 @@
+title: Agent Tool Abuse (call rate spike)
+id: 8b934482-79bc-55cb-bc8b-b9a87d769f01
+name: agent-02-tool-abuse
+status: experimental
+description: |
+  Скачок частоты tool calls от одного агента/сессии. Может указывать на prompt
+  injection, infinite loop (OWASP Agentic ASI04), попытку обхода rate-limit.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-04-agentic-breach.md
+tags:
+  - owasp.agentic.asi04
+  - atlas.tactic.ta0040
+logsource:
+  product: agent-broker
+detection:
+  selection:
+    event.category: 'agent-tool-call'
+    agent.calls_per_minute|gte: 120
+  condition: selection
+falsepositives:
+  - Batch job агента по расписанию (должен иметь soft-limit override с доказательством)
+level: high

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>Shadow-03 LLM Provider API Key Leak in Repository</name>
+  <id>shadow-03-api-key-in-repo</id>
+  <severity>high</severity>
+  <type>correlation</type>
+  <description>Обнаружение API-ключа публичного LLM-провайдера в Git-репозитории через secret scanner (git-leaks, truffleHog, GitGuardian, внутренний).</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="secret_found">
+      <filter><and>
+        <eq field="DeviceEventCategory" value="secret-detected"/>
+        <in field="DeviceCustomString1" values="openai-api-key,anthropic-api-key,huggingface-token,cohere-api-key,deepseek-api-key,yandexgpt-api-key,gigachat-api-key"/>
+        <eq field="DeviceCustomString2" value="true"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition><selector>secret_found</selector></condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>high</severity>
+      <category>ML-SHADOW-AI</category>
+      <playbook>IR-05</playbook>
+    </action>
+    <action type="soar_trigger">
+      <playbook>revoke-provider-api-key</playbook>
+      <params>secret.category,secret.value_hash</params>
+    </action>
+  </actions>
+</rule>

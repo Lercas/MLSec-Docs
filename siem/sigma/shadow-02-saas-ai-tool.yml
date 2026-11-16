@@ -1,0 +1,27 @@
+title: Shadow AI - SaaS Tool SSO Sign-in
+id: c57d20ba-e420-54b9-8682-7aa22d764402
+name: shadow-02-saas-ai-tool
+status: experimental
+description: |
+  Сотрудник выполнил SSO sign-in в несанкционированный SaaS AI-инструмент
+  (Cursor, Copilot, Notion AI, Perplexity, v0.dev, Grammarly, ChatPDF, etc.).
+  Обнаружение через IdP / SSO audit.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-05-shadow-ai-leak.md
+tags:
+  - owasp.llm06-2025
+logsource:
+  product: sso
+  service: audit
+detection:
+  selection:
+    event.category: 'authentication'
+    event.action: 'sso-authorize'
+    target.application.category: 'ai-tool'
+    policy.sanctioned_application: false
+  condition: selection
+falsepositives:
+  - Одобренный pilot (должен быть в sanctioned list)
+level: medium

@@ -1,0 +1,52 @@
+title: ML Model Extraction Pattern (query-based)
+id: aa0504e4-aef7-5bb8-95c2-802c360ee481
+name: ml-03-extraction-pattern
+status: experimental
+description: |
+  Обнаружение паттернов извлечения модели через API: аномальный рост RPS,
+  запросы с logits/logprobs/top_k, систематическое покрытие пространства признаков.
+  Три признака из пяти в одном enrichment-событии; часовые агрегаты вычисляет upstream, не Sigma condition.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-02-model-extraction.md
+tags:
+  - attack.exfiltration
+  - attack.ta0010
+  - atlas.tactic.ta0005
+  - atlas.technique.t0024
+  - owasp.llm10-2025
+logsource:
+  product: llm-gateway
+  service: inference
+detection:
+  signal_high_rps:
+    event.category: 'inference-request'
+    client.rps_1h|gte: 500
+  signal_logits_requested:
+    event.category: 'inference-request'
+    gen_ai.request.logprobs: true
+  signal_high_entropy:
+    event.category: 'inference-request'
+    request.input_entropy|gte: 0.85
+  signal_systematic_pattern:
+    event.category: 'inference-request'
+    detection.pattern_score|gte: 0.7
+  signal_long_session:
+    event.category: 'inference-request'
+    client.request_count_24h|gte: 10000
+  condition: >-
+    (signal_high_rps and signal_logits_requested and signal_high_entropy) or
+    (signal_high_rps and signal_logits_requested and signal_systematic_pattern) or
+    (signal_high_rps and signal_logits_requested and signal_long_session) or
+    (signal_high_rps and signal_high_entropy and signal_systematic_pattern) or
+    (signal_high_rps and signal_high_entropy and signal_long_session) or
+    (signal_high_rps and signal_systematic_pattern and signal_long_session) or
+    (signal_logits_requested and signal_high_entropy and signal_systematic_pattern) or
+    (signal_logits_requested and signal_high_entropy and signal_long_session) or
+    (signal_logits_requested and signal_systematic_pattern and signal_long_session) or
+    (signal_high_entropy and signal_systematic_pattern and signal_long_session)
+falsepositives:
+  - Легальная задача fine-tuning клиента с одобренным scope (подтверждается договором)
+  - Load test из CI (должен проходить от known IP)
+level: critical

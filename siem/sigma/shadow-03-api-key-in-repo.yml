@@ -1,0 +1,32 @@
+title: LLM Provider API Key Leak in Repository
+id: 7f50201e-eca2-5ecd-a49c-f5400e5dccc8
+name: shadow-03-api-key-in-repo
+status: experimental
+description: |
+  Обнаружение API-ключей публичных LLM-провайдеров в коммитах Git-репозиториев.
+  Интеграция с secret scanner (git-leaks, truffleHog, GitGuardian, внутренний).
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-05-shadow-ai-leak.md
+tags:
+  - owasp.llm06-2025
+  - atlas.tactic.ta0006
+logsource:
+  product: secret-scanner
+detection:
+  selection:
+    event.category: 'secret-detected'
+    secret.category:
+      - 'openai-api-key'
+      - 'anthropic-api-key'
+      - 'huggingface-token'
+      - 'cohere-api-key'
+      - 'deepseek-api-key'
+      - 'yandexgpt-api-key'
+      - 'gigachat-api-key'
+    secret.in_history: true
+  condition: selection
+falsepositives:
+  - Тестовые mock-значения (должны содержать явный suffix _MOCK / _TEST)
+level: high

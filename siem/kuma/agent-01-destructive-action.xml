@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>Agent-01 Destructive Action Without HITL</name>
+  <id>agent-01-destructive-action</id>
+  <severity>critical</severity>
+  <type>correlation</type>
+  <description>Агент инициировал destructive-операцию (delete, drop, truncate, send, financial-transfer) без HITL подтверждения.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="destructive">
+      <filter><and>
+        <eq field="DeviceProduct" value="AgentBroker"/>
+        <eq field="DeviceEventCategory" value="agent-tool-call"/>
+        <in field="DeviceCustomString1" values="destructive,external-side-effect,financial"/>
+        <eq field="DeviceCustomString2" value="true"/>
+        <in field="DeviceCustomString3" values="invalid,missing,expired,replayed,unknown"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition><selector>destructive</selector></condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>critical</severity>
+      <category>ML-AGENT-BREACH</category>
+      <playbook>IR-04</playbook>
+    </action>
+    <action type="soar_trigger">
+      <playbook>agent-kill-switch-L4</playbook>
+      <params>agent.id</params>
+    </action>
+  </actions>
+</rule>

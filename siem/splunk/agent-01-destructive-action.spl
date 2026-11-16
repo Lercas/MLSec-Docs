@@ -1,0 +1,6 @@
+`agent_broker` earliest=-5m
+| where 'tool.risk_class' IN ("destructive","external-side-effect","financial")
+| where 'hitl.required'="true" AND coalesce('approval.validation',"unknown")!="verified"
+| eval detection="agent-01-destructive-action", severity="critical"
+| table _time, detection, severity, agent.id, agent.owner, session.id, tool.name, tool.risk_class, action.target, action.args_redacted
+| sort - _time

@@ -1,0 +1,210 @@
+# Integration scaffold: requires project-owned adapters, reviewed tool locks and trust data.
+# Disabled until explicit opt-in; see ci/README.md. Not a production-ready pipeline.
+# MLSec Daily Compliance
+# Ежедневные проверки соответствия: SBOM, CVE, OPA policies на production артефактах.
+# Выполняется в 02:00 UTC каждый день и по ручному вызову.
+
+name: MLSec Daily Compliance
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPA_SHA256: ${{ vars.OPA_LINUX_AMD64_SHA256 }}
+  OPA_TRUST_DATA: ${{ vars.OPA_TRUST_DATA_PATH }}
+
+jobs:
+  # ----------------------------------------------------------------------
+  # SBOM + ML-BOM refresh
+  # ----------------------------------------------------------------------
+  sbom-refresh:
+    if: vars.MLSEC_INTEGRATION_ENABLED == 'true'
+    name: "SBOM / ML-BOM refresh"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install tools
+        run: |
+          pip install "cyclonedx-bom==8.0.1" "cyclonedx-python-lib==11.12.0"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM (CycloneDX Python)
+        run: cyclonedx-py requirements requirements.lock -o sbom/sbom.cdx.json
+
+      - name: Generate SBOM (Syft, container image)
+        env:
+          REGISTRY: ghcr.io
+        run: |
+          syft ${{ env.REGISTRY }}/${{ github.repository }}:latest -o cyclonedx-json > sbom/image.cdx.json
+
+      - name: Generate ML-BOM
+        run: python scripts/gen_mlbom.py --model-registry production --out sbom/mlbom.cdx.json
+
+      - name: Upload SBOM bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ github.run_id }}
+          path: sbom/
+          retention-days: 30
+
+  # ----------------------------------------------------------------------
+  # CVE scan
+  # ----------------------------------------------------------------------
+  cve-scan:
+    permissions:
+      contents: read
+      security-events: write
+    if: vars.MLSEC_INTEGRATION_ENABLED == 'true'
+    name: "CVE scan (Trivy + Grype)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Trivy FS scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (immutable release after CVE-2026-33634)
+        with:
+          scan-type: "fs"
+          severity: "CRITICAL,HIGH"
+          format: "sarif"
+          output: "trivy-fs.sarif"
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (immutable release after CVE-2026-33634)
+        with:
+          scan-type: "image"
+          image-ref: "ghcr.io/${{ github.repository }}:latest"
+          severity: "CRITICAL,HIGH"
+          format: "sarif"
+          output: "trivy-image.sarif"
+
+      - name: Install Grype
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Grype scan (second opinion)
+        run: grype dir:. --output json > grype.json
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-fs.sarif
+
+      - name: Upload SARIF image
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-image.sarif
+
+      - name: Check CRITICAL CVE count
+        run: |
+          CRIT=$(jq '[.matches[] | select(.vulnerability.severity=="Critical")] | length' grype.json)
+          if [ "$CRIT" -gt 0 ]; then
+            echo "::error::Found $CRIT CRITICAL CVE, see reports"
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------------
+  # OPA policy validation against production state
+  # ----------------------------------------------------------------------
+  opa-validate:
+    if: vars.MLSEC_INTEGRATION_ENABLED == 'true'
+    name: "OPA policies: production state"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install OPA
+        run: |
+          bash ci/scripts/install-opa.sh /tmp/mlsec-opa
+
+      - name: Unit tests on policies
+        run: /tmp/mlsec-opa test opa/ --verbose
+
+      - name: Collect production state
+        env:
+          K8S_TOKEN: ${{ secrets.K8S_READ_TOKEN }}
+          MODEL_REGISTRY_TOKEN: ${{ secrets.MODEL_REGISTRY_TOKEN }}
+        run: python scripts/collect_prod_state.py --out prod-state.json
+
+      - name: Evaluate model-deployment.rego on production
+        run: |
+          /tmp/mlsec-opa eval -d opa/model-deployment.rego -d "${OPA_TRUST_DATA:?trusted verifier data file required}" -i prod-state.json "data.ml.deployment.violations" | tee deploy-violations.json
+          COUNT=$(jq '.result[0].expressions[0].value | length' deploy-violations.json)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::Production has $COUNT deployment policy violations"
+            jq '.result[0].expressions[0].value' deploy-violations.json
+          fi
+
+      - name: Evaluate data-governance.rego
+        run: |
+          /tmp/mlsec-opa eval -d opa/data-governance.rego -i prod-state.json "data.ml.data_governance.violations" | tee data-violations.json
+
+      - name: Evaluate supply-chain.rego
+        run: |
+          /tmp/mlsec-opa eval -d opa/supply-chain.rego -d "${OPA_TRUST_DATA:?trusted verifier data file required}" -i prod-state.json "data.ml.supply_chain.violations" | tee supply-violations.json
+
+      - name: Upload violation reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opa-violations-${{ github.run_id }}
+          path: "*-violations.json"
+
+  # ----------------------------------------------------------------------
+  # Kill-switch drill (automated)
+  # ----------------------------------------------------------------------
+  killswitch-drill:
+    if: github.event_name == 'workflow_dispatch' && vars.MLSEC_CANARY_DRILL_ENABLED == 'true'
+    environment: isolated-canary-drill
+    name: "Kill-switch RTO drill"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run L0 kill-switch in canary + measure RTO
+        env:
+          GATEWAY_URL: ${{ secrets.GATEWAY_CANARY_URL }}
+          ADMIN_TOKEN: ${{ secrets.GATEWAY_ADMIN_TOKEN }}
+        run: python scripts/killswitch_drill.py --level L0 --timeout 120 --rto-max 30
+
+      - name: Run L3 (cloud egress) drill
+        env:
+          GATEWAY_URL: ${{ secrets.GATEWAY_CANARY_URL }}
+          ADMIN_TOKEN: ${{ secrets.GATEWAY_ADMIN_TOKEN }}
+        run: python scripts/killswitch_drill.py --level L3 --timeout 120 --rto-max 15
+
+  # ----------------------------------------------------------------------
+  # Notify + create issue on failure
+  # ----------------------------------------------------------------------
+  notify:
+    permissions:
+      issues: write
+    name: "Notify + issue on failure"
+    needs: [sbom-refresh, cve-scan, opa-validate, killswitch-drill]
+    if: failure() && vars.MLSEC_NOTIFICATIONS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Slack notify
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-Type: application/json' \
+            -d '{"text":":rotating_light: MLSec Daily Compliance FAILED on '"$GITHUB_REPOSITORY"' run '"$GITHUB_RUN_ID"'"}'
+
+      - name: Open GitHub issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[compliance] Daily run ${context.runId} failed`,
+              body: `Daily compliance workflow failed. See run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              labels: ['compliance', 'automated', 'priority-high']
+            })

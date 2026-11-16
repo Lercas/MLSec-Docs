@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>ML-01 Pipeline Tampering</name>
+  <id>ml-01-pipeline-tampering</id>
+  <severity>high</severity>
+  <type>correlation</type>
+  <description>Обнаружение несанкционированных изменений в ML-пайплайне: неподписанный push в main/master/prod, запуск обучения вне CI/CD, добавление зависимости из неверифицированного источника.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="git_unsigned">
+      <filter>
+        <and>
+          <eq field="DeviceEventCategory" value="git"/>
+          <eq field="DeviceAction" value="push"/>
+          <in field="CustomString1" values="main,master,prod,production"/>
+          <eq field="CustomString2" value="false"/>
+        </and>
+      </filter>
+    </selector>
+    <selector id="training_oob">
+      <filter>
+        <and>
+          <eq field="DeviceEventCategory" value="training"/>
+          <eq field="DeviceAction" value="start"/>
+          <isempty field="CustomString3"/>
+        </and>
+      </filter>
+    </selector>
+    <selector id="new_dependency">
+      <filter>
+        <and>
+          <eq field="DeviceEventCategory" value="pipeline"/>
+          <eq field="DeviceAction" value="dependency-added"/>
+          <not><regex field="CustomString4" pattern="^https?://(pypi\.org|nexus\.corp|artifactory\.corp)"/></not>
+        </and>
+      </filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition>
+      <any>
+        <selector>git_unsigned</selector>
+        <selector>training_oob</selector>
+        <selector>new_dependency</selector>
+      </any>
+    </condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>high</severity>
+      <category>ML-POISONING</category>
+      <playbook>IR-01</playbook>
+    </action>
+    <action type="notify">
+      <recipients>mlsec-soc-l1</recipients>
+    </action>
+  </actions>
+</rule>

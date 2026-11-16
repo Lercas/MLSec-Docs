@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>ML-03 Model Extraction Pattern</name>
+  <id>ml-03-extraction-pattern</id>
+  <severity>critical</severity>
+  <type>correlation</type>
+  <description>Паттерн query-based model extraction: высокий RPS, запросы с logprobs, высокая энтропия входов, систематическое покрытие пространства признаков. Требуется 3 из 5 сигналов в окне 1 час.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <window>3600</window>
+  <groupBy>api_key_id,src_ip,user_id</groupBy>
+  <selectors>
+    <selector id="high_rps">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <gte field="DeviceCustomNumber2" value="500"/>
+      </and></filter>
+    </selector>
+    <selector id="logits_requested">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <eq field="CustomString1" value="logprobs:true"/>
+      </and></filter>
+    </selector>
+    <selector id="high_entropy">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <gte field="DeviceCustomFloatingPoint1" value="0.85"/>
+      </and></filter>
+    </selector>
+    <selector id="systematic_pattern">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <gte field="DeviceCustomFloatingPoint2" value="0.7"/>
+      </and></filter>
+    </selector>
+    <selector id="long_session">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <gte field="DeviceCustomNumber3" value="10000"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition>
+      <atLeast count="3">
+        <selector>high_rps</selector>
+        <selector>logits_requested</selector>
+        <selector>high_entropy</selector>
+        <selector>systematic_pattern</selector>
+        <selector>long_session</selector>
+      </atLeast>
+    </condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>critical</severity>
+      <category>ML-EXTRACTION</category>
+      <playbook>IR-02</playbook>
+    </action>
+    <action type="soar_trigger">
+      <playbook>revoke-api-key</playbook>
+      <params>api_key_id</params>
+    </action>
+  </actions>
+</rule>

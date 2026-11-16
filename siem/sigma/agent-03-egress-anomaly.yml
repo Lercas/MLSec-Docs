@@ -1,0 +1,25 @@
+title: Agent Egress Anomaly
+id: ccce4c51-2206-5209-8d00-0c3652fe64bc
+name: agent-03-egress-anomaly
+status: experimental
+description: |
+  Агент инициировал сетевое соединение к домену/IP вне allow-list. Типично для
+  атак через MCP Tool Poisoning, попыток exfiltration через tool-use.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-04-agentic-breach.md
+tags:
+  - atlas.tactic.ta0005
+  - owasp.agentic.asi07
+logsource:
+  product: agent-broker
+detection:
+  selection:
+    event.category: 'agent-network'
+    destination.domain|exists: true
+    policy.allowlist_match: false
+  condition: selection
+falsepositives:
+  - Первичное добавление нового внешнего API (должно проходить через PR в allowlist)
+level: high

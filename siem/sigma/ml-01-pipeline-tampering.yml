@@ -1,0 +1,47 @@
+title: ML Pipeline Tampering
+id: 5cab15ef-dd8f-5d60-bddf-8a5214131b94
+name: ml-01-pipeline-tampering
+status: experimental
+description: |
+  Обнаружение несанкционированных или неподписанных изменений в ML-пайплайне:
+  модификация DAG, неожиданные новые зависимости, запуск обучения вне CI/CD.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - https://attack.mitre.org/matrices/atlas/
+  - playbooks/IR-01-data-poisoning.md
+tags:
+  - attack.resource-development
+  - attack.ta0042
+  - atlas.tactic.ta0000
+  - atlas.technique.t0020
+logsource:
+  product: mlops
+  service: training-pipeline
+detection:
+  selection_git_unsigned:
+    event.category: 'git'
+    event.action: 'push'
+    git.branch|contains:
+      - 'main'
+      - 'master'
+      - 'prod'
+    git.signed: false
+    repository.tags|contains: 'ml-pipeline'
+  selection_training_oob:
+    event.category: 'training'
+    event.action: 'start'
+    ci_run_id|exists: false
+  selection_new_dependency:
+    event.category: 'pipeline'
+    event.action: 'dependency-added'
+    dependency.source|re: '^https?://'
+  filter_trusted_dependency:
+    event.category: 'pipeline'
+    event.action: 'dependency-added'
+    dependency.source|re: '^https?://(pypi\.org|nexus\.corp|artifactory\.corp)(/|$)'
+  condition: (1 of selection_*) and not filter_trusted_dependency
+falsepositives:
+  - Ручной запуск обучения разработчиком в рамках исследования (должен подтверждаться комментарием)
+  - Миграция репозитория без ретро-подписи
+level: high

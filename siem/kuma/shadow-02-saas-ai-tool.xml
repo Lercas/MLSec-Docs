@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>Shadow-02 SaaS AI Tool SSO Sign-in</name>
+  <id>shadow-02-saas-ai-tool</id>
+  <severity>medium</severity>
+  <type>correlation</type>
+  <description>SSO sign-in в несанкционированный SaaS AI-инструмент (Cursor, Copilot, Notion AI, Perplexity, v0.dev, Grammarly, ChatPDF и т.д.).</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="sso_ai">
+      <filter><and>
+        <eq field="DeviceEventCategory" value="authentication"/>
+        <eq field="DeviceAction" value="sso-authorize"/>
+        <eq field="DeviceCustomString1" value="ai-tool"/>
+        <ne field="DeviceCustomString2" value="true"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition><selector>sso_ai</selector></condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>medium</severity>
+      <category>ML-SHADOW-AI</category>
+      <playbook>IR-05</playbook>
+    </action>
+  </actions>
+</rule>

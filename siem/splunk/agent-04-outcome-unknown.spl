@@ -1,0 +1,5 @@
+`agent_broker` earliest=-15m
+| where 'event.category'="agent-action-reconciliation" AND 'action.outcome'="unknown" AND 'reconciliation.status'="overdue"
+| eval detection="agent-04-outcome-unknown", severity="high"
+| table _time, detection, severity, tenant.id, principal.id, action.id, action.digest, policy.revision, job.id, reconciliation.owner, evidence.ref
+| sort - _time

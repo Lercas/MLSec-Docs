@@ -1,0 +1,7 @@
+`secret_scanner_findings` earliest=-24h
+| where 'secret.category' IN ("openai-api-key","anthropic-api-key","huggingface-token","cohere-api-key","deepseek-api-key","yandexgpt-api-key","gigachat-api-key")
+| where 'secret.in_history'="true"
+| eval detection="shadow-03-api-key-in-repo"
+| eval severity=case('secret.in_history'="true" AND 'repository.visibility'="public", "critical", 1=1, "high")
+| table _time, detection, severity, secret.category, repository.name, repository.visibility, commit.sha, commit.author, file.path
+| sort - _time

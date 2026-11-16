@@ -1,0 +1,283 @@
+# Integration scaffold: requires project-owned adapters, reviewed tool locks and trust data.
+# Disabled until explicit opt-in; see ci/README.md. Not a production-ready pipeline.
+# MLSec Full Pipeline
+# Запускается на PR и push в main. Выполняет: data gate, train, test, ML gate, deploy.
+# Требуемые secrets см. в ci/README.md.
+
+name: MLSec Pipeline
+
+on:
+  push:
+    branches: [main, release/**]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPA_SHA256: ${{ vars.OPA_LINUX_AMD64_SHA256 }}
+  OPA_TRUST_DATA: ${{ vars.OPA_TRUST_DATA_PATH }}
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  MODEL_TIER: "2"
+
+jobs:
+  # ----------------------------------------------------------------------
+  # GATE 1: DATA
+  # ----------------------------------------------------------------------
+  data-gate:
+    if: vars.MLSEC_INTEGRATION_ENABLED == 'true' && github.event_name != 'pull_request'
+    name: "Data gate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install DVC + deps
+        run: |
+          pip install "dvc[s3]==3.67.1" "great-expectations==1.25.0" "presidio-analyzer==2.2.366" "presidio-anonymizer==2.2.366"
+          python -m spacy download ru_core_news_lg
+
+      - name: DVC pull
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DVC_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DVC_S3_SECRET_KEY }}
+        run: dvc pull
+
+      - name: Validate Data Card (OPA)
+        run: |
+          bash ci/scripts/install-opa.sh /tmp/mlsec-opa
+          /tmp/mlsec-opa eval -d opa/data-governance.rego -i data-card-input.json "data.ml.data_governance.allow" > data-gate.json
+          jq -e '.result[0].expressions[0].value == true' data-gate.json
+
+      - name: Data quality (Great Expectations)
+        run: python -m great_expectations checkpoint run data_checkpoint
+
+      - name: PII scan (Presidio)
+        run: python scripts/pii_scan.py --input data/ --report reports/pii.json
+
+      - name: Poisoning scan
+        run: python scripts/poisoning_scan.py --input data/ --report reports/poisoning.json
+
+      - name: Upload reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: data-reports
+          path: reports/
+
+  # ----------------------------------------------------------------------
+  # GATE 2: TRAIN (only main / release)
+  # ----------------------------------------------------------------------
+  train:
+    name: "Train model"
+    needs: data-gate
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.lock --require-hashes
+
+      - name: Train
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_URI }}
+          MLFLOW_TRACKING_TOKEN: ${{ secrets.MLFLOW_TOKEN }}
+        run: python train.py --config configs/train.yaml
+
+      - name: Upload model
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: model
+          path: artifacts/model/
+
+  # ----------------------------------------------------------------------
+  # GATE 3: TEST (unit, integration, adversarial, bias)
+  # ----------------------------------------------------------------------
+  test:
+    name: "Test suite"
+    needs: train
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: model
+          path: artifacts/model/
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.lock --require-hashes
+
+      - name: Unit + integration
+        run: pytest tests/ -v --junit-xml=reports/junit.xml
+
+      - name: Adversarial robustness (ART)
+        run: python scripts/adversarial_test.py --model artifacts/model/ --report reports/adv.json
+
+      - name: Bias analysis (Fairlearn)
+        run: python scripts/bias_analysis.py --model artifacts/model/ --report reports/bias.json
+
+      - name: Red team (garak)
+        if: env.MODEL_TIER == '1' || env.MODEL_TIER == '2'
+        run: |
+          pip install "garak==0.17.1"
+          garak --target_type huggingface --target_name artifacts/model/ --spec probes.promptinject,probes.encoding,probes.malwaregen --report_prefix reports/garak
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports
+          path: reports/
+
+  # ----------------------------------------------------------------------
+  # GATE 4: ML SECOPS GATE (OPA policies)
+  # ----------------------------------------------------------------------
+  ml-gate:
+    name: "ML SecOps gate"
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: model
+          path: artifacts/model/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: test-reports
+          path: reports/
+
+      - name: Build model-input.json
+        run: python scripts/build_opa_input.py --model artifacts/model/ --reports reports/ --out model-input.json
+
+      - name: OPA ML gate
+        run: |
+          bash ci/scripts/install-opa.sh /tmp/mlsec-opa
+          /tmp/mlsec-opa eval -d opa/model-deployment.rego -d "${OPA_TRUST_DATA:?trusted verifier data file required}" -i model-input.json "data.ml.deployment.allow" > gate.json
+          jq -e '.result[0].expressions[0].value == true' gate.json
+
+      - name: Sign artifact (cosign)
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cosign sign-blob --key env://COSIGN_PRIVATE_KEY artifacts/model/model.safetensors --output-signature artifacts/model/model.safetensors.sig
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          pip install "cyclonedx-bom==8.0.1"
+          cyclonedx-py requirements requirements.lock -o artifacts/sbom.cdx.json
+
+      - name: Generate ML-BOM
+        run: python scripts/gen_mlbom.py --model artifacts/model/ --out artifacts/mlbom.cdx.json
+
+      - name: CVE scan (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (immutable release after CVE-2026-33634)
+        with:
+          scan-type: "fs"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-artifacts
+          path: artifacts/
+
+  # ----------------------------------------------------------------------
+  # GATE 5: DEPLOY (canary rollout)
+  # ----------------------------------------------------------------------
+  deploy-canary:
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: mlsec-production-rollout
+      cancel-in-progress: false
+    name: "Deploy to canary 10%"
+    needs: ml-gate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production-canary
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed-artifacts
+          path: artifacts/
+
+      - name: Log in to registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build + push image
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Sign image
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: cosign sign --key env://COSIGN_PRIVATE_KEY ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Deploy canary 10%
+        run: |
+          umask 077
+          printf '%s' "$KUBECONFIG_DATA" | base64 --decode > "$RUNNER_TEMP/mlsec-kubeconfig"
+          export KUBECONFIG="$RUNNER_TEMP/mlsec-kubeconfig"
+          kubectl apply -f k8s/canary-10.yaml
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+
+      - name: Health check canary
+        run: scripts/health_check.sh canary
+
+      - name: Kill-switch RTO test
+        run: scripts/kill_switch_test.sh
+
+  deploy-100:
+    name: "Promote to 100%"
+    needs: deploy-canary
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: mlsec-production-rollout
+      cancel-in-progress: false
+    steps:
+      - name: Approval gate
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        run: |
+          umask 077
+          printf '%s' "$KUBECONFIG_DATA" | base64 --decode > "$RUNNER_TEMP/mlsec-kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/mlsec-kubeconfig" >> "$GITHUB_ENV"
+          echo "Environment reviewers and branch restrictions must be configured outside this YAML"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Promote 50%
+        run: kubectl apply -f k8s/canary-50.yaml
+      - name: Wait + metrics check
+        run: scripts/metrics_check.sh 50
+      - name: Promote 100%
+        run: kubectl apply -f k8s/canary-100.yaml
+      - name: Final metrics check
+        run: scripts/metrics_check.sh 100

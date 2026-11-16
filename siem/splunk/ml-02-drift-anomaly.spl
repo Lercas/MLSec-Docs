@@ -1,0 +1,16 @@
+`ml_monitoring_metrics` earliest=-30d@d latest=-1h
+| where match(metric_name, "(?i)(accuracy|f1|auc|psi|ks_statistic)$")
+| where model_tier IN (1, 2)
+| stats
+    avg(metric_value) as mean_30d,
+    stdev(metric_value) as stdev_30d
+    by model_id, metric_name
+| join type=left model_id, metric_name [
+    search `ml_monitoring_metrics` earliest=-1h
+    | stats latest(metric_value) as current_value latest(_time) as _time by model_id, metric_name ]
+| where stdev_30d > 0 AND isnotnull(current_value)
+| eval deviation_sigma = abs(current_value - mean_30d) / stdev_30d
+| where deviation_sigma >= 3
+| eval detection="ml-02-drift-anomaly", severity=if(deviation_sigma>=5, "critical", "high")
+| table _time, detection, severity, model_id, metric_name, current_value, mean_30d, stdev_30d, deviation_sigma
+| sort - deviation_sigma

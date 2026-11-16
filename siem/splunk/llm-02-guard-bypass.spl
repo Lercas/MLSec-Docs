@@ -1,0 +1,5 @@
+`llm_gateway_requests` earliest=-15m
+| where 'guard.pre_verdict'="allow" AND ('post_dlp.verdict'="block" OR 'post_dlp.verdict'="leak-detected")
+| eval detection="llm-02-guard-bypass", severity="high"
+| table _time, detection, severity, user_id, api_key_id, model, guard.pre_verdict, post_dlp.verdict, post_dlp.categories, post_dlp.masked_entities
+| sort - _time

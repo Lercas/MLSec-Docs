@@ -1,0 +1,314 @@
+# Synthetic temporal fixtures. Run promtool from the repository root.
+# They check PromQL behavior only, not exporter correctness or alert delivery.
+rule_files:
+- prometheus-agent-alerts.yaml
+evaluation_interval: 1m
+tests:
+- name: AgentHighPolicyDenialRate temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="policy_denied"}
+    values: 0+60x30
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: AgentHighPolicyDenialRate
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: AgentHighPolicyDenialRate
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        severity: high
+        owner: agent-owner-placeholder
+      exp_annotations:
+        summary: Высокая частота policy_denied для AI-агента
+        description: Agent agent-synthetic генерирует повышенную частоту policy_denied. Проверьте action policy,
+          tool scope и возможный prompt injection.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentRepeatedApprovalBypassAttempts temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="policy_denied",policy_decision="deny",reason="approval_bypass_attempt"}
+    values: 0 1 2 3+0x15
+  alert_rule_test:
+  - eval_time: 2m
+    alertname: AgentRepeatedApprovalBypassAttempts
+    exp_alerts: []
+  - eval_time: 8m
+    alertname: AgentRepeatedApprovalBypassAttempts
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        severity: critical
+        owner: security-owner-placeholder
+      exp_annotations:
+        summary: Повторяющиеся попытки обхода согласования
+        description: Agent agent-synthetic получил несколько отказов из-за обхода согласования. Требуется pause
+          или disable до проверки approval flow.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentToolCallSpike temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="tool_call_requested"}
+    values: 0+1x120 130+10x30
+  alert_rule_test:
+  - eval_time: 120m
+    alertname: AgentToolCallSpike
+    exp_alerts: []
+  - eval_time: 140m
+    alertname: AgentToolCallSpike
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        severity: medium
+        owner: platform-owner-placeholder
+      exp_annotations:
+        summary: Всплеск tool calls
+        description: Agent agent-synthetic показывает резкий рост tool_call_requested. Проверьте loop behavior,
+          schedule и runtime limits.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentConnectorErrorSpike temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="connector_error",connector_id="connector-synthetic"}
+    values: 0+12x30
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: AgentConnectorErrorSpike
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: AgentConnectorErrorSpike
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        connector_id: connector-synthetic
+        severity: high
+        owner: connector-owner-placeholder
+      exp_annotations:
+        summary: Всплеск connector_error
+        description: Connector connector-synthetic для agent agent-synthetic возвращает много ошибок. Проверьте
+          connector overreach, compromise или misconfiguration.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentMemoryWriteSpike temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="memory_write"}
+    values: 0+12x30
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: AgentMemoryWriteSpike
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: AgentMemoryWriteSpike
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        severity: high
+        owner: agent-owner-placeholder
+      exp_annotations:
+        summary: Всплеск memory_write
+        description: Agent agent-synthetic выполняет необычно много memory_write. Проверьте memory poisoning, retention
+          и source trust.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentKillSwitchTriggered temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="kill_switch_triggered"}
+    values: 0 1+0x5
+  alert_rule_test:
+  - eval_time: 0m
+    alertname: AgentKillSwitchTriggered
+    exp_alerts: []
+  - eval_time: 1m
+    alertname: AgentKillSwitchTriggered
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        event_type: kill_switch_triggered
+        severity: critical
+        owner: security-owner-placeholder
+      exp_annotations:
+        summary: Сработал kill switch
+        description: Для agent agent-synthetic сработал kill switch. Требуется incident review, evidence preservation
+          и re-enable только после retest.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentRuntimeStateChanged temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="agent_disabled"}
+    values: 0 1+0x5
+  alert_rule_test:
+  - eval_time: 0m
+    alertname: AgentRuntimeStateChanged
+    exp_alerts: []
+  - eval_time: 1m
+    alertname: AgentRuntimeStateChanged
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        event_type: agent_disabled
+        severity: high
+        owner: platform-owner-placeholder
+      exp_annotations:
+        summary: Зафиксирован переход состояния runtime
+        description: Agent agent-synthetic сгенерировал событие перехода состояния. Проверьте reason, previous_state,
+          new_state и evidence_ref.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentRollbackEvent temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="rollback_started"}
+    values: 0 1+0x5
+  alert_rule_test:
+  - eval_time: 0m
+    alertname: AgentRollbackEvent
+    exp_alerts: []
+  - eval_time: 1m
+    alertname: AgentRollbackEvent
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        event_type: rollback_started
+        severity: medium
+        owner: rollback-owner-placeholder
+      exp_annotations:
+        summary: Зафиксирован rollback event
+        description: Для agent agent-synthetic зафиксирован rollback_started или rollback_completed. Проверьте diff,
+          владельца отката и результат повторного тестирования.
+        runbook: 34-ai-agents-runtime-procedure.md
+- name: AgentLoopSuspected temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_active_workflow_step_limit_violations_total{agent_id="agent-synthetic"}
+    values: 0 1+0x15
+  alert_rule_test:
+  - eval_time: 4m
+    alertname: AgentLoopSuspected
+    exp_alerts: []
+  - eval_time: 6m
+    alertname: AgentLoopSuspected
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        severity: high
+        owner: platform-owner-placeholder
+      exp_annotations:
+        summary: Подозрение на agent loop
+        description: Runtime обнаружил превышение шагов отдельного активного run у agent agent-synthetic. Workflow
+          reference ищите в защищённом журнале; run ID не экспортируется как label.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentUnauthorizedActionAttempts temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="policy_denied",policy_decision="deny",action_name="action-synthetic"}
+    values: 0+6x30
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: AgentUnauthorizedActionAttempts
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: AgentUnauthorizedActionAttempts
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        action_name: action-synthetic
+        severity: high
+        owner: agent-owner-placeholder
+      exp_annotations:
+        summary: Попытки неразрешённого действия
+        description: Agent agent-synthetic пытается выполнить action action-synthetic вне policy.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentExpiredApprovalUsage temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_runtime_events_total{agent_id="agent-synthetic",event_type="policy_denied",reason="approval_expired"}
+    values: 0 1+0x5
+  alert_rule_test:
+  - eval_time: 0m
+    alertname: AgentExpiredApprovalUsage
+    exp_alerts: []
+  - eval_time: 1m
+    alertname: AgentExpiredApprovalUsage
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        event_type: policy_denied
+        reason: approval_expired
+        severity: critical
+        owner: agent-owner-placeholder
+      exp_annotations:
+        summary: Попытка использовать expired approval
+        description: Agent attempted action with expired approval. Проверьте approval record, зафиксируйте approval_revoked
+          для отзыва и выполните regression eval.
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentExternalSideEffectAnomaly temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_action_validation_failures_total{agent_id="agent-synthetic",check="external_action_approval"}
+    values: 0 1+0x5
+  alert_rule_test:
+  - eval_time: 0m
+    alertname: AgentExternalSideEffectAnomaly
+    exp_alerts: []
+  - eval_time: 1m
+    alertname: AgentExternalSideEffectAnomaly
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        severity: critical
+        owner: security-owner-placeholder
+      exp_annotations:
+        summary: Trusted gate отклонил approval для external action
+        description: 'Для agent agent-synthetic не прошла проверка approval конкретной операции. Проверьте stateful
+          evidence join, а также независимый readback: counter не доказывает, что внешний эффект произошёл или был
+          предотвращён.'
+        runbook: examples/agents/runbook-connector-quarantine.md
+- name: AgentTelemetryDropped temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_telemetry_dropped_total{agent_id="agent-synthetic",reason="queue_full"}
+    values: 0 1+0x5
+  alert_rule_test:
+  - eval_time: 0m
+    alertname: AgentTelemetryDropped
+    exp_alerts: []
+  - eval_time: 1m
+    alertname: AgentTelemetryDropped
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        severity: high
+        owner: platform-owner-placeholder
+      exp_annotations:
+        summary: Потеря agent audit telemetry
+        description: Проверьте bounded queue, ingress/schema/cardinality rejection и режим dispatch при потере критичного
+          аудита.
+        runbook: examples/agents/README.md
+- name: AgentTelemetryDeliveryStale temporal negative and positive
+  interval: 1m
+  input_series:
+  - series: agent_telemetry_last_success_timestamp_seconds{agent_id="agent-synthetic"}
+    values: 0+0x15
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: AgentTelemetryDeliveryStale
+    exp_alerts: []
+  - eval_time: 11m
+    alertname: AgentTelemetryDeliveryStale
+    exp_alerts:
+    - exp_labels:
+        agent_id: agent-synthetic
+        severity: high
+        owner: platform-owner-placeholder
+      exp_annotations:
+        summary: Agent telemetry не доставляется вовремя
+        description: Порог 300 секунд иллюстративный. Полное отсутствие ряда требует отдельного inventory/up check;
+          stale gauge не обнаруживает отсутствующий ряд автоматически.
+        runbook: examples/agents/README.md
+- name: missing series is not zero and does not fire stale gauge
+  interval: 1m
+  input_series: []
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: AgentTelemetryDeliveryStale
+    exp_alerts: []

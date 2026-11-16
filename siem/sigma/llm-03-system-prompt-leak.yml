@@ -1,0 +1,30 @@
+title: LLM System Prompt Leak
+id: 13818d9c-442f-5105-8484-2a89877197a7
+name: llm-03-system-prompt-leak
+status: experimental
+description: |
+  Обнаружение утечки system prompt в ответе модели. Проверка по canary-фразам,
+  встроенным в system prompt, и по семантическому сходству ответа с реестром
+  системных промптов.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - https://genai.owasp.org/llmrisk/llm07-system-prompt-leakage/
+  - playbooks/IR-03-prompt-injection-campaign.md
+tags:
+  - atlas.tactic.ta0005
+  - atlas.technique.t0051
+  - owasp.llm07-2025
+logsource:
+  product: llm-gateway
+detection:
+  selection_canary:
+    event.category: 'llm-response'
+    response.contains_canary: true
+  selection_similarity:
+    event.category: 'llm-response'
+    response.system_prompt_similarity|gte: 0.8
+  condition: 1 of selection_*
+falsepositives:
+  - Документирование системного промпта через интерфейс администратора
+level: high

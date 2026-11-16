@@ -1,0 +1,21 @@
+| tstats summariesonly=true count
+    from datamodel=MLOps.Git
+    where
+        (Git.action="push")
+        AND (Git.branch IN ("main","master","prod","production"))
+        AND (Git.signed="false")
+    by _time, Git.actor, Git.repository, Git.commit_sha
+| rename Git.* as *
+| eval detection="ml-01-pipeline-tampering"
+| eval severity="high"
+| where actor!="ci-bot"
+| append [
+    search index=mlops sourcetype=mlops:training event.action="start"
+    | where NOT isnotnull(ci_run_id) OR ci_run_id=""
+    | stats count by _time, actor, model_id, dataset_id
+    | eval detection="ml-01-training-oob" ]
+| append [
+    search index=mlops sourcetype=mlops:dependency event.action="dependency-added"
+    | where NOT match('dependency.source', "(?i)^https?://(pypi\.org|nexus\.corp|artifactory\.corp)")
+    | stats count by _time, actor, dependency.name, dependency.source ]
+| table _time, detection, severity, actor, *

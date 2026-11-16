@@ -1,0 +1,23 @@
+title: Agent Side Effect Reconciliation Overdue
+id: 7c8a428f-b3f8-41fc-a2b5-fbd8f1cd8a21
+name: agent-04-outcome-unknown
+status: experimental
+description: |
+  Side effect после timeout/cancel остаётся неизвестным, а сверка просрочена.
+  Это сигнал расследования, не подтверждённый дубль/утечка. Поля формирует
+  trusted executor/reconciler, не текст модели или HTTP response code.
+author: MLSec Team
+date: 2026-11-13
+references:
+  - https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices
+logsource:
+  product: agent-broker
+detection:
+  selection:
+    event.category: agent-action-reconciliation
+    action.outcome: unknown
+    reconciliation.status: overdue
+  condition: selection
+falsepositives:
+  - Недоступность target readback; нужен owner и ручная сверка, а не blind retry
+level: high

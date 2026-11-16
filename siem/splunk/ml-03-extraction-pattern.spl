@@ -1,0 +1,20 @@
+`llm_gateway_inference` earliest=-1h
+| stats
+    count as request_count,
+    dc(request_hash) as unique_requests,
+    sum(eval(if(gen_ai.request.logprobs="true",1,0))) as logprobs_count,
+    avg(request.input_entropy) as avg_entropy,
+    avg(detection.pattern_score) as avg_pattern_score
+    by api_key_id, src_ip, user_id
+| eval rps_1h = request_count / 3600.0
+| eval
+    c_high_rps = if(rps_1h>=500, 1, 0),
+    c_logits = if(logprobs_count>0, 1, 0),
+    c_entropy = if(avg_entropy>=0.85, 1, 0),
+    c_pattern = if(avg_pattern_score>=0.7, 1, 0),
+    c_volume = if(request_count>=10000, 1, 0)
+| eval signal_count = c_high_rps + c_logits + c_entropy + c_pattern + c_volume
+| where signal_count >= 3
+| eval detection="ml-03-extraction-pattern", severity="critical"
+| table _time, detection, severity, api_key_id, src_ip, user_id, request_count, rps_1h, avg_entropy, avg_pattern_score, signal_count
+| sort - signal_count - request_count

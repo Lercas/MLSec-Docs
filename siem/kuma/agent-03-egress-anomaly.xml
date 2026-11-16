@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>Agent-03 Egress Anomaly</name>
+  <id>agent-03-egress-anomaly</id>
+  <severity>high</severity>
+  <type>correlation</type>
+  <description>Агент инициировал сетевое соединение к домену вне allow-list. Потенциальный вектор exfiltration.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="non_allowlisted">
+      <filter><and>
+        <eq field="DeviceProduct" value="AgentBroker"/>
+        <eq field="DeviceEventCategory" value="agent-network"/>
+        <isnotempty field="DestinationHostName"/>
+        <ne field="DeviceCustomString1" value="true"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition><selector>non_allowlisted</selector></condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>high</severity>
+      <category>ML-AGENT-BREACH</category>
+      <playbook>IR-04</playbook>
+    </action>
+  </actions>
+</rule>

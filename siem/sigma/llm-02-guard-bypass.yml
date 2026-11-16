@@ -1,0 +1,28 @@
+title: LLM Guardrails Bypass Detected
+id: 79cf9550-bdc5-5372-b085-77e7943c61e8
+name: llm-02-guard-bypass
+status: experimental
+description: |
+  Обнаружение успешного обхода guardrails: guard НЕ сработал, но post-call DLP
+  выявил утечку PII/КТ, либо модель выдала запрещённый контент.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-03-prompt-injection-campaign.md
+tags:
+  - atlas.tactic.ta0005
+  - atlas.technique.t0054
+  - owasp.llm06-2025
+logsource:
+  product: llm-gateway
+detection:
+  selection:
+    event.category: 'llm-response'
+    guard.pre_verdict: 'allow'
+    post_dlp.verdict:
+      - 'block'
+      - 'leak-detected'
+  condition: selection
+falsepositives:
+  - Ложное срабатывание post-DLP (проверять регулярно)
+level: high

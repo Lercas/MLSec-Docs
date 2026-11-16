@@ -1,0 +1,12 @@
+(index=proxy OR index=zscaler OR index=netskope OR index=casb) earliest=-1h
+| where match('destination.domain', "(?i)(^|\.)(openai\.com|anthropic\.com|claude\.ai|deepseek\.com|mistral\.ai|perplexity\.ai|groq\.com|cohere\.com|together\.ai|fireworks\.ai|replicate\.com|huggingface\.co|gemini\.google\.com|poe\.com|character\.ai)$")
+| where 'source.user.is_service'!="true" AND 'policy.sanctioned_gateway'!="true"
+| where 'http.request.body.bytes' >= 4096
+| eval detection="shadow-01-external-llm", severity="medium"
+| stats
+    count as request_count,
+    sum(http.request.body.bytes) as total_upload_bytes,
+    values(destination.domain) as domains
+    by user.name, src_ip, detection, severity
+| where request_count >= 1
+| sort - total_upload_bytes

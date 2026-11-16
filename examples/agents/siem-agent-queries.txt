@@ -1,0 +1,243 @@
+# SIEM queries для событий исполнения AI-агента
+
+Эти запросы являются vendor-neutral псевдо-SQL/KQL-like примерами.
+Они предполагают таблицу `agent_runtime_events` с полями из `agent-runtime-events.schema.json`.
+Не используйте реальные hostnames, usernames, tokens или production URLs.
+
+Версия формы: milksec-agent-examples/1.0 (JSON Schema Draft 2020-12), см. README.md.
+Таблицы allowlist, approval, action_bindings, dispatch_decisions, provider_jobs и lifecycle_intervals
+ниже — проектные нормализованные представления с собственным контрактом, не поля старой event schema.
+Их заполняют trusted services; содержимое prompt/tool output не является source of truth.
+Запросы обнаруживают кандидатов для расследования, а не авторизуют выполнение.
+Join ограничивается tenant/principal, экземпляром run и конкретной operation; данные запрашиваются
+в ограниченном окне с лимитом строк, защищённым evidence access и контролем clock skew/late delivery.
+Потеря/задержка журнала делает отсутствие события неопределённостью, а не доказательством отказа.
+
+---
+
+Запрос: actions denied by policy
+Назначение: Найти действия, заблокированные policy.
+Псевдо-запрос:
+  SELECT timestamp, agent_id, workflow_id, workflow_instance_id, parent_agent_id, child_agent_id, handoff_id, tool_call_chain_id, actor_type, actor_id, initiated_by, executed_by, action_type, action_name, tool_id, tool_name, connector_id, policy_decision, evidence_uri
+  FROM agent_runtime_events
+  WHERE event_type = 'policy_denied'
+  ORDER BY timestamp DESC
+Ожидаемые поля: timestamp, event_type, agent_id, workflow_id, workflow_instance_id, action_type, action_name, tool_id, connector_id, policy_decision, correlation_id, handoff_id, tool_call_chain_id, evidence_uri
+Заметки для проверки: Проверьте action policy, граница согласования, source input и возможный prompt injection.
+
+---
+
+Запрос: tool calls outside approved scope
+Назначение: Выявить tool calls, не входящие в approved tool scope.
+Псевдо-запрос:
+  SELECT e.timestamp, e.agent_id, e.workflow_id, e.workflow_instance_id, e.tool_call_chain_id, e.tool_id, e.tool_name, e.connector_id, e.action_type, e.action_name, e.correlation_id
+  FROM agent_runtime_events e
+  LEFT JOIN agent_tool_scope_allowlist a
+    ON e.agent_id = a.agent_id
+   AND e.tool_name = a.tool_name
+   AND e.action_name = a.action_name
+  WHERE e.event_type = 'tool_call_requested'
+    AND a.action_name IS NULL
+Ожидаемые поля: timestamp, agent_id, tool_id, tool_name, connector_id, action_type, action_name, workflow_id, workflow_instance_id, tool_call_chain_id, correlation_id
+Заметки для проверки: Если allowlist отсутствует, используйте action policy как source of truth. Не расширяйте scope без reassessment.
+
+---
+
+Запрос: actions after expiry согласования
+Назначение: Найти действия, выполненные после истечения согласования.
+Псевдо-запрос:
+  SELECT e.timestamp, e.agent_id, e.workflow_id, e.action_name, e.approval_id, a.action_id, a.expires_at, e.evidence_uri
+  FROM agent_runtime_events e
+  JOIN agent_approval_records a
+    ON e.approval_id = a.approval_id
+  WHERE e.event_type = 'tool_call_executed'
+    AND a.expires_at <= e.timestamp
+Ожидаемые поля: timestamp, agent_id, workflow_id, action_name, approval_id, action_id, expires_at, evidence_uri
+Заметки для проверки: Treat as обход согласования risk. Pause affected agent if action is write/внешнее воздействие.
+
+---
+
+Запрос: memory writes containing prohibited classification marker
+Назначение: Выявить memory writes с запрещённой data classification.
+Псевдо-запрос:
+  SELECT timestamp, agent_id, workflow_id, data_classification, memory_operation, input_reference, evidence_uri
+  FROM agent_runtime_events
+  WHERE event_type = 'memory_write'
+    AND data_classification IN ('restricted', 'unknown')
+Ожидаемые поля: timestamp, agent_id, workflow_id, data_classification, memory_operation, input_reference, evidence_uri
+Заметки для проверки: Не просматривайте raw content. Используйте references/hashes и шаблон управления memory.
+
+---
+
+Запрос: repeated connector failures
+Назначение: Найти connector с повторяющимися ошибками.
+Псевдо-запрос:
+  SELECT connector_id, agent_id, COUNT(*) AS error_count, MIN(timestamp) AS first_seen, MAX(timestamp) AS last_seen
+  FROM agent_runtime_events
+  WHERE event_type = 'connector_error'
+    AND timestamp > now() - interval '30 minutes'
+  GROUP BY connector_id, agent_id
+  HAVING COUNT(*) >= 5
+Ожидаемые поля: connector_id, agent_id, error_count, first_seen, last_seen
+Заметки для проверки: Рассмотрите изоляцию connector, сужение scope и credential rotation.
+
+---
+
+Запрос: kill switch events
+Назначение: Найти все срабатывания kill switch.
+Псевдо-запрос:
+  SELECT timestamp, agent_id, workflow_id, actor_type, actor_id, status, error_code, evidence_uri
+  FROM agent_runtime_events
+  WHERE event_type = 'kill_switch_triggered'
+  ORDER BY timestamp DESC
+Ожидаемые поля: timestamp, agent_id, workflow_id, actor_type, actor_id, status, evidence_uri
+Заметки для проверки: Требуется разбор после инцидента и повторное включение только после retest.
+
+---
+
+Запрос: high-risk action без согласования
+Назначение: Найти high/critical actions без approval_id.
+Псевдо-запрос:
+  SELECT timestamp, agent_id, workflow_id, action_type, action_name, action_risk_level, approval_id, policy_decision, evidence_uri
+  FROM agent_runtime_events
+  WHERE event_type = 'tool_call_executed'
+    AND action_risk_level IN ('high', 'critical')
+    AND approval_id IS NULL
+Ожидаемые поля: timestamp, agent_id, workflow_id, action_type, action_name, action_risk_level, approval_id, policy_decision
+Заметки для проверки: Treat as potential обход согласования. Проверьте связь с записью согласования.
+
+---
+
+Запрос: unusual tool sequence
+Назначение: Найти подозрительные последовательности tool calls в одном workflow.
+Псевдо-запрос:
+  SELECT agent_id, workflow_id, workflow_instance_id, correlation_id, tool_call_chain_id, collect_list(action_name ORDER BY timestamp) AS action_sequence
+  FROM agent_runtime_events
+  WHERE event_type IN ('tool_call_requested', 'tool_call_executed')
+    AND timestamp > now() - interval '1 hour'
+  GROUP BY agent_id, workflow_id, workflow_instance_id, correlation_id, tool_call_chain_id
+  HAVING action_sequence MATCHES 'read_.* -> .*external.* -> .*write.*'
+Ожидаемые поля: agent_id, workflow_id, workflow_instance_id, correlation_id, tool_call_chain_id, action_sequence
+Заметки для проверки: Проверить unsafe chained action и external side-effect согласование.
+
+---
+
+Запрос: same actor approving and requesting restricted action
+Назначение: Найти случаи, где один actor запросил и согласовал restricted action.
+Псевдо-запрос:
+  SELECT r.agent_id, r.workflow_id, r.action_name, r.actor_id AS requester, a.approver_ids, r.approval_id
+  FROM agent_runtime_events r
+  JOIN agent_approval_records a
+    ON r.approval_id = a.approval_id
+  WHERE r.event_type = 'approval_required'
+    AND r.data_classification IN ('confidential', 'restricted')
+    AND r.actor_id IN a.approver_ids
+Ожидаемые поля: agent_id, workflow_id, action_name, requester, approver_ids, approval_id
+Заметки для проверки: Проверить разделение обязанностей и требования к two-person согласованию.
+
+---
+
+Запрос: bulk external actions
+Назначение: Найти bulk actions с внешнее воздействие.
+Псевдо-запрос:
+  SELECT timestamp, agent_id, workflow_id, action_type, action_name, external_side_effect, approval_id, evidence_uri
+  FROM agent_runtime_events
+  WHERE external_side_effect = true
+    AND action_name LIKE '%bulk%'
+Ожидаемые поля: timestamp, agent_id, workflow_id, action_type, action_name, external_side_effect, approval_id
+Заметки для проверки: Bulk external action должен требовать two-person согласование.
+
+---
+
+Запрос: agent activity after disablement
+Назначение: Найти активность среды выполнения после `agent_disabled`.
+Псевдо-запрос:
+  WITH disabled AS (
+    SELECT agent_id, MAX(timestamp) AS disabled_at
+    FROM agent_runtime_events
+    WHERE event_type = 'agent_disabled'
+    GROUP BY agent_id
+  )
+  SELECT e.timestamp, e.agent_id, e.event_type, e.workflow_id, e.action_name, e.evidence_uri
+  FROM agent_runtime_events e
+  JOIN disabled d ON e.agent_id = d.agent_id
+  WHERE e.timestamp > d.disabled_at
+    AND e.event_type NOT IN ('agent_disabled', 'agent_stopped', 'agent_retired')
+Ожидаемые поля: timestamp, agent_id, event_type, workflow_id, action_name, evidence_uri
+Заметки для проверки: Это грубый candidate query: MAX(disabled_at) не учитывает разрешённое re-enable и ранее отправленные jobs. Для verdict стройте lifecycle_intervals по trusted state revisions, отделяйте новый dispatch от forensic/readback. Не объявляйте ожидаемый поздний результат bypass автоматически.
+
+---
+
+Запрос: multi-agent delegation anomaly
+Назначение: Найти handoff/delegation anomalies между агентами.
+Псевдо-запрос:
+  SELECT timestamp, agent_id, workflow_id, workflow_instance_id, parent_agent_id, child_agent_id, handoff_id, delegation_scope_hash, initiated_by, executed_by, action_name, policy_decision, approval_id, correlation_id
+  FROM agent_runtime_events
+  WHERE event_type IN ('agent_handoff_requested', 'agent_handoff_completed', 'policy_denied')
+    AND (parent_agent_id IS NOT NULL OR child_agent_id IS NOT NULL OR handoff_id IS NOT NULL)
+    AND (delegation_scope_hash IS NULL OR policy_decision IN ('deny', 'approval_required'))
+Ожидаемые поля: timestamp, agent_id, workflow_id, workflow_instance_id, parent_agent_id, child_agent_id, handoff_id, delegation_scope_hash, initiated_by, executed_by, approval_id, correlation_id
+Заметки для проверки: проверьте handoff boundary, per-agent scope, `delegation_scope` и карточку реестра для участвующих агентов.
+
+---
+
+Запрос: reconstruct multi-agent chain
+Назначение: Восстановить цепочку действий по одному экземпляру workflow.
+Псевдо-запрос:
+  SELECT timestamp, event_type, agent_id, parent_agent_id, child_agent_id, handoff_id, tool_call_chain_id, initiated_by, executed_by, action_name, policy_decision, status, error_code, evidence_uri
+  FROM agent_runtime_events
+  WHERE workflow_instance_id = '<workflow_instance_id>'
+  ORDER BY timestamp ASC
+Ожидаемые поля: workflow_instance_id, timestamp, event_type, agent_id, initiated_by, executed_by, handoff_id, tool_call_chain_id, policy_decision, status, error_code
+Заметки для проверки: исходного инициатора берите из первого ненулевого `initiated_by`; место сбоя ищите по первому `policy_denied`, `tool_call_denied`, `status=failed` или ненулевому `error_code`.
+
+---
+
+Запрос: action binding и актуальная делегация непосредственно перед dispatch
+Назначение: Найти write dispatch без подходящего semantic verdict, включая resume после очереди.
+Псевдо-запрос (проектные evidence views, не drop-in SQL):
+  SELECT d.operation_ref, d.tenant_ref, d.workflow_instance_id, d.dispatch_at,
+         d.action_snapshot_digest, v.reason_code, d.evidence_ref
+  FROM dispatch_decisions d
+  LEFT JOIN action_validation_verdicts v
+    ON d.tenant_ref = v.tenant_ref
+   AND d.workflow_instance_id = v.workflow_instance_id
+   AND d.operation_ref = v.operation_ref
+   AND d.action_snapshot_digest = v.action_snapshot_digest
+   AND d.policy_revision = v.policy_revision
+   AND d.delegation_revision = v.delegation_revision
+  WHERE d.write_or_sensitive_read = true
+    AND (v.operation_ref IS NULL OR v.verdict <> 'allow'
+         OR v.valid_until <= d.dispatch_at OR v.validated_at > d.dispatch_at)
+Заметки для проверки: Allow проверяет current roles/ACL/revocation, binding к аргументам/preview и атомарную consumption/reservation. Один старый allow и короткое временное окно не защищают от TOCTOU; authoritative store/fencing проверяется в executor. Два разных actor_id требуют identity mapping на разных людей, а не только сравнения строк.
+
+---
+
+Запрос: orphan remote jobs и unknown outcomes
+Назначение: Найти внешнюю работу, не закрытую подтверждённым результатом или отменой после остановки.
+Псевдо-запрос:
+  SELECT j.tenant_ref, j.operation_ref, j.provider_job_ref, j.last_outcome,
+         j.last_readback_at, j.reconciliation_owner, j.next_check_at, j.evidence_ref
+  FROM provider_jobs j
+  JOIN lifecycle_intervals s
+    ON j.tenant_ref = s.tenant_ref AND j.agent_id = s.agent_id
+  WHERE s.state IN ('disabled', 'quarantined', 'retired')
+    AND j.dispatched_at <= s.started_at
+    AND j.last_outcome IN ('pending', 'unknown')
+    AND s.ended_at IS NULL
+Заметки для проверки: HTTP cancel success и agent_stopped не закрывают job. Проверяйте фактический provider state/target readback; новый write не повторяется из-за timeout. Неизвестный job ID, недоступный provider и незавершённая budget сверка эскалируются owner. j.last_outcome — поле sidecar, не новый status event enum.
+
+---
+
+Запрос: memory/retirement resurrection
+Назначение: Найти retrieval/dispatch, использующий старый namespace после tombstone или отзывов.
+Псевдо-запрос:
+  SELECT r.tenant_ref, r.namespace_ref, r.operation_ref, r.memory_epoch,
+         t.retired_epoch, t.effective_at, r.evidence_ref
+  FROM memory_access_decisions r
+  JOIN retirement_tombstones t
+    ON r.tenant_ref = t.tenant_ref AND r.namespace_ref = t.namespace_ref
+  WHERE r.decided_at >= t.effective_at
+    AND r.memory_epoch <= t.retired_epoch
+    AND r.verdict = 'allow'
+Заметки для проверки: Проверяйте summaries/embeddings/cache/export и restore backup, а не только основную таблицу. Tombstone содержит минимальные ссылки, не raw sensitive content. Late ingestion, clock skew и законные forensic reads учитываются отдельно; чистый результат неполной telemetry ничего не доказывает.

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>Shadow-01 External LLM Domain Access</name>
+  <id>shadow-01-external-llm</id>
+  <severity>medium</severity>
+  <type>correlation</type>
+  <description>Обращение к публичным LLM-провайдерам с корпоративного endpoint в обход sanctioned gateway. Включает OpenAI, Anthropic, DeepSeek, Mistral, Perplexity, Groq, Cohere, HuggingFace и др.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="external_llm">
+      <filter><and>
+        <eq field="DeviceEventCategory" value="network-connection"/>
+        <regex field="DestinationHostName" pattern="(?i)(openai\.com|anthropic\.com|claude\.ai|deepseek\.com|mistral\.ai|perplexity\.ai|groq\.com|cohere\.com|together\.ai|fireworks\.ai|replicate\.com|huggingface\.co|gemini\.google\.com|poe\.com|character\.ai)$"/>
+        <ne field="SourceUserType" value="service"/>
+        <ne field="DeviceCustomString1" value="true"/>
+        <gte field="BytesOut" value="4096"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition><selector>external_llm</selector></condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>medium</severity>
+      <category>ML-SHADOW-AI</category>
+      <playbook>IR-05</playbook>
+    </action>
+  </actions>
+</rule>

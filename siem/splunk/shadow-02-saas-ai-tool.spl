@@ -1,0 +1,7 @@
+`sso_audit` earliest=-1h
+| where 'event.action'="sso-authorize"
+| where 'target.application.category'="ai-tool"
+| where 'policy.sanctioned_application'!="true"
+| eval detection="shadow-02-saas-ai-tool", severity="medium"
+| table _time, detection, severity, user.name, target.application.name, target.application.category, sso.provider, src_ip
+| sort - _time

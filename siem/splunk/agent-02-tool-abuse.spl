@@ -1,0 +1,7 @@
+`agent_broker` earliest=-5m
+| bin _time span=1m
+| stats count as calls_per_min by _time, agent.id, session.id
+| where calls_per_min >= 120
+| eval detection="agent-02-tool-abuse", severity="high"
+| table _time, detection, severity, agent.id, session.id, calls_per_min
+| sort - calls_per_min

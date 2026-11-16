@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Illustrative pseudocode, NOT a KUMA resource export/import format.
+     Recreate and validate in your KUMA version. SOAR actions are design intent
+     requiring separate authorization and readback. -->
+<rule>
+  <name>LLM-03 System Prompt Leak</name>
+  <id>llm-03-system-prompt-leak</id>
+  <severity>high</severity>
+  <type>correlation</type>
+  <description>Утечка системного промпта в ответе: обнаружена canary-фраза либо высокое семантическое сходство ответа с реестром системных промптов.</description>
+  <author>MLSec Team</author>
+  <date>2026-04-22</date>
+  <enabled>false</enabled>
+  <selectors>
+    <selector id="canary">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <eq field="DeviceEventCategory" value="llm-response"/>
+        <eq field="DeviceCustomString3" value="canary-hit"/>
+      </and></filter>
+    </selector>
+    <selector id="similarity">
+      <filter><and>
+        <eq field="DeviceProduct" value="LLMGateway"/>
+        <eq field="DeviceEventCategory" value="llm-response"/>
+        <gte field="DeviceCustomFloatingPoint3" value="0.8"/>
+      </and></filter>
+    </selector>
+  </selectors>
+  <conditions>
+    <condition>
+      <any>
+        <selector>canary</selector>
+        <selector>similarity</selector>
+      </any>
+    </condition>
+  </conditions>
+  <actions>
+    <action type="create_incident">
+      <severity>high</severity>
+      <category>ML-INJECTION</category>
+      <playbook>IR-03</playbook>
+    </action>
+  </actions>
+</rule>

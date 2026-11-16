@@ -1,0 +1,49 @@
+title: ML Model Artifact Exfiltration
+id: adb7232c-63d2-55f2-b0c9-77ff83914524
+name: ml-04-artifact-exfiltration
+status: experimental
+description: |
+  Обнаружение попыток выноса файлов моделей (веса, архитектура, tokenizer)
+  из корпоративного хранилища: S3/MinIO/Artifactory/Registry. Триггеры: большие
+  GET-запросы к путям с моделями, вынос через egress, копирование на флешки.
+author: MLSec Team
+date: 2026-04-22
+references:
+  - playbooks/IR-02-model-extraction.md
+tags:
+  - attack.exfiltration
+  - attack.ta0010
+  - atlas.tactic.ta0005
+  - atlas.technique.t0035
+logsource:
+  product: object-storage
+detection:
+  selection_s3_get:
+    event.category: 'object-access'
+    event.action: 'GetObject'
+    object.path|re: '\.(safetensors|bin|gguf|onnx|pt|ckpt|pb)$|/models/|/artifacts/'
+    object.size_bytes|gte: 104857600
+  selection_dvc_pull:
+    event.category: 'dvc'
+    event.action: 'pull'
+    dvc.total_size_gb|gte: 5
+    actor.type: 'human'
+  selection_egress_upload:
+    event.category: 'network'
+    event.action: 'egress'
+    destination.category:
+      - 'cloud-storage'
+      - 'file-sharing'
+      - 'personal-webmail'
+    file.extension:
+      - 'safetensors'
+      - 'bin'
+      - 'gguf'
+      - 'onnx'
+      - 'pt'
+      - 'ckpt'
+  condition: 1 of selection_*
+falsepositives:
+  - Официальный download для deploy (должен запускаться сервис-аккаунтом из CI)
+  - Backup pipeline (известный destination)
+level: critical

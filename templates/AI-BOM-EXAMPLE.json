@@ -1,0 +1,207 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:f3d8a1e2-1234-4a5b-9c8d-abcdef012345",
+  "version": 2,
+  "metadata": {
+    "timestamp": "2026-11-13T00:00:00Z",
+    "tools": [
+      {
+        "vendor": "MLSec Recommendations",
+        "name": "ai-bom-template",
+        "version": "1.2"
+      }
+    ],
+    "authors": [
+      {
+        "name": "CISO Office",
+        "email": "ciso@example.org"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:org/ai-platform@1.0",
+      "name": "Corporate AI Platform",
+      "version": "1.0",
+      "description": "Корпоративная ИИ-платформа: LLM Gateway + RAG + агенты"
+    },
+    "properties": [
+      {"name": "organization.id", "value": "ORG-0001"},
+      {"name": "organization.name", "value": "Example Corp"},
+      {"name": "compliance.152fz.applicable", "value": "pending-assessment"},
+      {"name": "compliance.187fz.kii_category", "value": "N/A: synthetic example, applicability not assessed"},
+      {"name": "mlsec:example.synthetic", "value": "true"},
+      {"name": "mlsec:evidence.status", "value": "illustrative-not-production-verified"},
+      {"name": "mlsec:property.namespace", "value": "mlsec:* is a local convention, not native CycloneDX fields"},
+      {"name": "mlsec:review.triggers", "value": "provider, region, data purpose, license, prompt/tool schema, permissions, retention, incident, retirement"}
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "pkg:model/customer-support-bot@2.1",
+      "name": "Customer Support Bot",
+      "version": "2.1",
+      "description": "Синтетическая API-модель для черновиков поддержки; provider/model ID и условия требуют проверки перед реальным использованием",
+      "licenses": [
+        {
+          "license": {
+            "name": "Example API contract - terms pending verification"
+          }
+        }
+      ],
+      "properties": [
+        {"name": "ml.tier", "value": "2"},
+        {"name": "ml.data_class", "value": "K2"},
+        {"name": "ml.provider", "value": "Sber GigaChat"},
+        {"name": "ml.base_model", "value": "GigaChat-Pro"},
+        {"name": "ml.fine_tuning", "value": "none"},
+        {"name": "ml.deployment", "value": "api-gateway"},
+        {"name": "ml.business_owner", "value": "support-team"},
+        {"name": "ml.technical_owner", "value": "ml-platform-team"},
+        {"name": "ml.pia.completed", "value": "false"},
+        {"name": "ml.threat_model.completed", "value": "false"},
+        {"name": "ml.red_team.last_run", "value": "N/A: illustrative metrics only, no executed test"},
+        {"name": "mlsec:scenario.id", "value": "SC-SUPPORT-DRAFT-01"},
+        {"name": "mlsec:purpose", "value": "Draft support replies; sending requires backend action-bound approval"},
+        {"name": "mlsec:artifact.identity", "value": "API weights digest unavailable; provider model revision pending verification"},
+        {"name": "mlsec:release.bundle", "value": "synthetic support-draft/2.1; prompt draft-v3; tool schema mail-v2; policy draft-only-v1"},
+        {"name": "mlsec:evidence.status", "value": "pending"},
+        {"name": "mlsec:evidence.owner", "value": "ml-platform-team"},
+        {"name": "mlsec:evidence.ref", "value": "urn:example:pending:support-draft-validation"},
+        {"name": "mlsec:license.status", "value": "unknown: API terms, model weights and dataset rights assessed separately"},
+        {"name": "mlsec:provider.copies", "value": "unknown: retention, training use, moderation logs and backup deletion require contract evidence"},
+        {"name": "mlsec:retirement.owner", "value": "support-team: revoke credentials, reconcile jobs, invalidate cache, request processor deletion"},
+        {"name": "mlsec.kill_switch.level", "value": "L2"},
+        {"name": "mlsec.dlp.enabled", "value": "true"}
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-generation",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "decoder-only",
+          "datasets": [
+            {
+              "ref": "pkg:dataset/support-tickets-synthetic@1.0"
+            }
+          ]
+        },
+        "quantitativeAnalysis": {
+          "performanceMetrics": [
+            {"type": "accuracy", "value": "0.87"},
+            {"type": "toxicity-rate", "value": "0.002"},
+            {"type": "dlp-leak-rate", "value": "0.0001"}
+          ]
+        },
+        "considerations": {
+          "ethicalConsiderations": [
+            {
+              "name": "pii-leakage: mitigation requires validation; DLP alone is not evidence of prevention"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "pkg:model/fraud-classifier@3.2",
+      "name": "Fraud Detection Classifier",
+      "version": "3.2",
+      "description": "XGBoost классификатор мошеннических транзакций",
+      "licenses": [{"license": {"name": "Example model artifact terms - pending verification"}}],
+      "properties": [
+        {"name": "ml.tier", "value": "1"},
+        {"name": "ml.data_class", "value": "K3"},
+        {"name": "ml.provider", "value": "self-hosted"},
+        {"name": "ml.base_model", "value": "XGBoost"},
+        {"name": "ml.deployment", "value": "kubernetes-kserve"},
+        {"name": "ml.mrm.independent_validation", "value": "pending: synthetic example"},
+        {"name": "ml.regulatory", "value": "CBR-716P"},
+        {"name": "mlsec.adversarial_testing", "value": "ART, quarterly"},
+        {"name": "mlsec.pet", "value": "N/A: no DP mechanism demonstrated; epsilon alone is not a privacy guarantee"},
+        {"name": "mlsec:license.status", "value": "unknown: framework license does not establish model/data rights"},
+        {"name": "mlsec:artifact.identity", "value": "pending: hash and verified publisher attestation required for real artifact"}
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:model/code-assistant-gateway@1.0",
+      "name": "Code Assistant Gateway Integration",
+      "version": "1.0",
+      "description": "Маршрутизация Cursor / Copilot / Claude CLI через Rilio",
+      "licenses": [{"license": {"name": "Example integration license - pending verification"}}],
+      "properties": [
+        {"name": "ml.tier", "value": "2"},
+        {"name": "ml.data_class", "value": "K2"},
+        {"name": "ml.provider", "value": "multi: Anthropic, OpenAI, Qwen"},
+        {"name": "ml.deployment", "value": "gateway-proxy"},
+        {"name": "mlsec.dlp.enabled", "value": "true"},
+        {"name": "mlsec.egress_firewall", "value": "allowlist-only"},
+        {"name": "mlsec:evidence.status", "value": "pending: IDE routing, setup/hooks, terminal, MCP and background egress tested independently"},
+        {"name": "mlsec:license.status", "value": "unknown: integration, clients and API contracts assessed separately"}
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:model/rag-knowledge-base@1.5",
+      "name": "Internal Knowledge RAG",
+      "version": "1.5",
+      "description": "RAG по внутренним документам на Qdrant + локальной Qwen",
+      "licenses": [{"license": {"name": "Example RAG application license - pending verification"}}],
+      "properties": [
+        {"name": "ml.tier", "value": "2"},
+        {"name": "ml.data_class", "value": "K2"},
+        {"name": "ml.provider", "value": "self-hosted"},
+        {"name": "ml.embedding_model", "value": "bge-m3"},
+        {"name": "ml.vector_db", "value": "qdrant"},
+        {"name": "ml.llm", "value": "Qwen-32B"},
+        {"name": "mlsec.source_signing", "value": "cosign"},
+        {"name": "mlsec.tenant_isolation", "value": "collection-per-department"},
+        {"name": "mlsec:evidence.status", "value": "pending: tenant ACL, cache invalidation and source revocation require effect tests"},
+        {"name": "mlsec:license.status", "value": "unknown: application, embedding weights, generation weights and corpus terms assessed separately"}
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "pkg:dataset/support-tickets-synthetic@1.0",
+      "name": "Synthetic Support Evaluation Tickets",
+      "version": "1.0",
+      "description": "120 illustrative handwritten tickets for scenario SC-SUPPORT-DRAFT-01; no actual dataset included in this example",
+      "properties": [
+        {"name": "mlsec:purpose", "value": "evaluation only; not provider training provenance"},
+        {"name": "mlsec:evidence.status", "value": "pending: fixture generation and similarity/privacy checks not executed"},
+        {"name": "mlsec:evidence.owner", "value": "support-data-team"},
+        {"name": "mlsec:privacy.unit", "value": "N/A: no DP claim; synthetic label alone does not prove anonymity"},
+        {"name": "mlsec:license.status", "value": "unknown: verify fixture authorship and permitted evaluation use"},
+        {"name": "mlsec:retirement", "value": "delete fixtures, derived indexes/cache and processor copies subject to documented retention exceptions"}
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:org/ai-platform@1.0",
+      "dependsOn": [
+        "pkg:model/customer-support-bot@2.1",
+        "pkg:model/fraud-classifier@3.2",
+        "pkg:model/code-assistant-gateway@1.0",
+        "pkg:model/rag-knowledge-base@1.5"
+      ]
+    },
+    {
+      "ref": "pkg:model/customer-support-bot@2.1",
+      "dependsOn": ["pkg:dataset/support-tickets-synthetic@1.0"]
+    }
+  ],
+  "annotations": [
+    {
+      "bom-ref": "ann-1",
+      "subjects": ["pkg:org/ai-platform@1.0"],
+      "annotator": {
+        "organization": {"name": "Example Corp CISO Office"}
+      },
+      "timestamp": "2026-11-13T00:00:00Z",
+      "text": "Entire BOM is synthetic, not an audit or provider product claim. Numeric metrics and controls are illustrative, not measured. Dataset dependency denotes evaluation input, not the API provider training data. Existing pkg:model/... application bom-ref values are retained as opaque identifiers for compatibility; they are not asserted package URLs. Schema validation does not verify licenses, identity or mitigation effectiveness. Evidence urn:example references intentionally identify missing example evidence, not real reports."
+    }
+  ]
+}
